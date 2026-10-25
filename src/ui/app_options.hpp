@@ -13,6 +13,10 @@ struct AppOptions {
     int frame{0};
     std::string dump;    // 离线：截帧路径；实时：截图前缀
     int wait_ms{800};
+
+    // 连续导出一段序列（用于生成演示动图）。为 0 时走原来的单张截图逻辑。
+    int dump_sequence_count{0};
+    int dump_interval_ms{100};
     int duration_sec{0};
     bool nack{false};
     bool adaptive{false};

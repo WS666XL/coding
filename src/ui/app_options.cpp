@@ -13,6 +13,8 @@ void print_ui_usage()
                  "  接收远端:     lowlat_ui --bind <addr:port> [--nack] [--adaptive]\n"
                  "  离线校验:     lowlat_ui --input <h264> [--frame N] [--dump out.png]\n"
                  "  --wait-ms <int>   首帧渲染前的等待，默认 800\n"
+                 "  --dump-seq <n>    连拍 n 张（配合 --dump）用于生成演示动图\n"
+                 "  --dump-interval <ms>  连拍间隔，默认 100\n"
                  "  --hold <ms>       帧保持窗口，默认 60\n"
                  "  --bitrate <kbps>  单机模式的编码码率，默认 2000\n"
                  "  --loss <percent>  启动时的模拟丢包百分比（0/2/5/10/20/30）\n");
@@ -55,6 +57,10 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
             if (!next_string(&options->dump)) return false;
         } else if (key == "--wait-ms") {
             if (!next_int(&options->wait_ms)) return false;
+        } else if (key == "--dump-seq") {
+            if (!next_int(&options->dump_sequence_count)) return false;
+        } else if (key == "--dump-interval") {
+            if (!next_int(&options->dump_interval_ms)) return false;
         } else if (key == "--duration") {
             if (!next_int(&options->duration_sec)) return false;
         } else if (key == "--hold") {

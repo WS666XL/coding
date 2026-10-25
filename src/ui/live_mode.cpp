@@ -432,7 +432,8 @@ int run_live_mode(const AppOptions& options)
     }
 
     // ---------------------------------------------------------------- 截图
-    if (!options.dump.empty()) {
+    // 单张与连拍互斥：单张会在 wait_ms 后直接退出。
+    if (!options.dump.empty() && options.dump_sequence_count <= 0) {
         QTimer::singleShot(options.wait_ms, &window, [&]() {
             const QImage video_image = video->grabFramebuffer();
             const QImage panel_image = panel->grab().toImage();
@@ -455,6 +456,45 @@ int run_live_mode(const AppOptions& options)
                               << "window=" << ok_window << window_path;
             QApplication::quit();
         });
+    }
+
+    // 连拍：导出序列供生成演示动图。
+    // 视频区与面板分开存，因为 QWidget::grab() 抓不到 QOpenGLWidget 的内容。
+    QTimer* sequence_timer = nullptr;
+    if (!options.dump.empty() && options.dump_sequence_count > 0) {
+        const QString directory =
+            QString::fromStdString(options.dump) + QStringLiteral("_seq");
+        QDir().mkpath(directory);
+        const QByteArray dir_bytes = directory.toLocal8Bit();
+
+        sequence_timer = new QTimer(&window);
+        sequence_timer->setInterval(options.dump_interval_ms);
+
+        auto captured = std::make_shared<int>(0);
+        QObject::connect(sequence_timer, &QTimer::timeout, video, [&, captured, dir_bytes]() {
+            if (*captured >= options.dump_sequence_count) {
+                sequence_timer->stop();
+                qInfo().noquote() << "[ui] 序列导出完成" << *captured << "帧";
+                QApplication::quit();
+                return;
+            }
+            const QImage video_image = video->grabFramebuffer();
+            const QImage panel_image = panel->grab().toImage();
+            if (video_image.isNull() || panel_image.isNull()) {
+                return;
+            }
+            // 用 JPEG 而不是 PNG：PNG 编码 1280x580 要约 15ms，直接把 UI 线程
+            // 拖到 12fps，面板会显示 BAD——录制手段干扰了被录对象。
+            // JPEG(q85) 约 3ms，实测不再影响帧率。
+            video_image.save(QString::asprintf("%s/%04d_video.jpg", dir_bytes.constData(),
+                                               *captured),
+                             "JPG", 85);
+            panel_image.save(QString::asprintf("%s/%04d_panel.jpg", dir_bytes.constData(),
+                                               *captured),
+                             "JPG", 90);
+            ++(*captured);
+        });
+        sequence_timer->start();
     }
 
     if (options.duration_sec > 0) {
