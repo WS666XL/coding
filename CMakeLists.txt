@@ -48,6 +48,7 @@ add_subdirectory(src/codec)
 add_subdirectory(src/protocol)
 add_subdirectory(src/transport)
 add_subdirectory(src/app)
+add_subdirectory(src/ui)
 add_subdirectory(tools)
 
 if(LOWLAT_BUILD_TESTS)
