@@ -121,6 +121,9 @@ bool StreamSender::open(const Config& config, std::string* error)
     packets_sent_ = 0;
     bytes_sent_ = 0;
     would_block_events_ = 0;
+    simulated_loss_permille_ = 0;
+    simulated_drops_ = 0;
+    rng_state_ = 0x2545F491u;
     packets_dropped_ = 0;
     fec_packets_sent_ = 0;
     fec_group_failures_ = 0;
@@ -130,6 +133,25 @@ bool StreamSender::open(const Config& config, std::string* error)
     unwrap_send_us_ = -1;
     unwrap_arrival_us_ = -1;
     return true;
+}
+
+void StreamSender::set_simulated_loss_permille(int permille) noexcept
+{
+    if (permille < 0) {
+        permille = 0;
+    }
+    if (permille > 1000) {
+        permille = 1000;
+    }
+    simulated_loss_permille_ = permille;
+}
+
+std::uint32_t StreamSender::next_random(std::uint32_t bound) noexcept
+{
+    rng_state_ ^= rng_state_ << 13;
+    rng_state_ ^= rng_state_ >> 17;
+    rng_state_ ^= rng_state_ << 5;
+    return bound == 0 ? 0 : (rng_state_ % bound);
 }
 
 int StreamSender::target_bitrate_kbps() const noexcept
@@ -279,6 +301,24 @@ bool StreamSender::send_frame(const std::vector<ByteSpan>& nals, std::uint32_t f
         } else if (error != nullptr) {
             error->clear();
         }
+    }
+
+    // 模拟丢包：必须在建 spans 之前把 buffers_ 里的元素删掉。
+    // 注意缓存是在前面填的，所以被"丢"掉的包仍然可以被 NACK 重传回来，
+    // 这与真实链路丢包后的可恢复性一致。
+    if (simulated_loss_permille_ > 0 && !buffers_.empty()) {
+        std::size_t kept = 0;
+        for (std::size_t i = 0; i < buffers_.size(); ++i) {
+            if (next_random(1000) < static_cast<std::uint32_t>(simulated_loss_permille_)) {
+                ++simulated_drops_;
+                continue;
+            }
+            if (kept != i) {
+                buffers_[kept] = std::move(buffers_[i]);
+            }
+            ++kept;
+        }
+        buffers_.resize(kept);
     }
 
     spans_.reserve(buffers_.size());

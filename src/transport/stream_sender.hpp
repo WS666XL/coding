@@ -87,6 +87,16 @@ public:
     std::uint64_t retransmit_packets_sent() const noexcept { return retransmit_packets_sent_; }
     std::uint64_t nack_unserviceable() const noexcept { return nack_unserviceable_; }
 
+    // 模拟丢包：在发送前按比例丢弃，用于演示/压测。
+    //
+    // 为什么不用 tc netem：那需要 root 与独立 netns，界面里没法按个按钮就生效。
+    // 在发送端丢弃的好处是完全进程内可控，且链路之后的行为与真实丢包一致——
+    // 收端看到的是序列号缺口，照样触发 NACK 与 FEC 恢复。
+    // 区别只在于丢包发生在"上行末端"而不是链路中间，对恢复机制而言没有差别。
+    void set_simulated_loss_permille(int permille) noexcept;
+    int simulated_loss_permille() const noexcept { return simulated_loss_permille_; }
+    std::uint64_t simulated_drops() const noexcept { return simulated_drops_; }
+
     // 拥塞控制产出的目标码率（kbps）。关闭拥塞控制时返回配置的起始码率。
     int target_bitrate_kbps() const noexcept;
     std::uint64_t feedback_received() const noexcept { return feedback_received_; }
@@ -108,6 +118,14 @@ private:
 
     BandwidthEstimator estimator_{};
     std::uint64_t feedback_received_{0};
+
+    int simulated_loss_permille_{0};
+    std::uint64_t simulated_drops_{0};
+    std::uint32_t rng_state_{0x2545F491u};
+
+    // 返回 [0, bound) 的伪随机数。用 xorshift 而不是 rand()：
+    // 可复现、无全局状态，也不会和别的库抢种子。
+    std::uint32_t next_random(std::uint32_t bound) noexcept;
     std::int64_t unwrap_send_us_{-1};
     std::int64_t unwrap_arrival_us_{-1};
 

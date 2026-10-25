@@ -82,8 +82,8 @@ sudo systemctl status lowlat-receiver
 # 0) 打开界面：点 "Open file..." 或把视频拖进窗口（推荐先试这个）
 ./scripts/demo.sh
 
-# 0b) 命令行直接播某个文件
-./build/src/ui/lowlat_ui --local 你的视频.mp4
+# 0b) 命令行直接播某个文件，并模拟 5% 丢包（界面上的 Loss 下拉框同一个开关）
+./build/src/ui/lowlat_ui --local 你的视频.mp4 --loss 5
 
 # 1) 命令行落盘：发送 300 帧并接收保存
 ./build/src/app/lowlat_receiver --bind 127.0.0.1:5000 --output out/recv.h264 \

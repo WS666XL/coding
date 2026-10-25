@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QDebug>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -13,6 +14,7 @@
 #include <QToolBar>
 #include <QWidget>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <memory>
@@ -103,6 +105,9 @@ int run_live_mode(const AppOptions& options)
         return 2;
     }
 
+    // 模拟丢包档位（千分比）。换文件后要重新应用到新发送端，所以放在外面。
+    int current_loss_permille = std::clamp(options.simulated_loss_percent, 0, 100) * 10;
+
     // ---------------------------------------------------------------- 界面
     QMainWindow window;
     auto* central = new QWidget(&window);
@@ -125,6 +130,29 @@ int run_live_mode(const AppOptions& options)
     auto* restart_action = toolbar->addAction(QStringLiteral("Restart"));
     pause_action->setEnabled(false);
     restart_action->setEnabled(false);
+
+    // 丢包档位：在发送端按比例丢包，不需要 root，也不影响系统网络
+    toolbar->addSeparator();
+    auto* loss_combo = new QComboBox(toolbar);
+    loss_combo->addItem(QStringLiteral("Loss: off"), 0);
+    loss_combo->addItem(QStringLiteral("Loss: 2%"), 20);
+    loss_combo->addItem(QStringLiteral("Loss: 5%"), 50);
+    loss_combo->addItem(QStringLiteral("Loss: 10%"), 100);
+    loss_combo->addItem(QStringLiteral("Loss: 20%"), 200);
+    loss_combo->addItem(QStringLiteral("Loss: 30%"), 300);
+    loss_combo->setToolTip(
+        QStringLiteral("Simulated packet loss on the sender (no root required)"));
+    if (external_mode) {
+        loss_combo->setEnabled(false);  // 只接收远端时没有本地发送端可丢
+    }
+    // 命令行预置的档位：找到匹配项就选中（找不到说明是自定义值，保持 off 显示）
+    for (int i = 0; i < loss_combo->count(); ++i) {
+        if (loss_combo->itemData(i).toInt() == current_loss_permille) {
+            loss_combo->setCurrentIndex(i);
+            break;
+        }
+    }
+    toolbar->addWidget(loss_combo);
 
     auto* spacer = new QWidget(toolbar);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -164,6 +192,7 @@ int run_live_mode(const AppOptions& options)
         }
 
         local_sender = std::move(candidate);
+        local_sender->set_simulated_loss_permille(current_loss_permille);
         current_file = path;
         pause_action->setEnabled(true);
         pause_action->setText(QStringLiteral("Pause"));
@@ -206,6 +235,14 @@ int run_live_mode(const AppOptions& options)
             return;
         }
         start_file(current_file);
+    });
+
+    QObject::connect(loss_combo, &QComboBox::currentIndexChanged, video, [&](int index) {
+        current_loss_permille = loss_combo->itemData(index).toInt();
+        if (local_sender) {
+            local_sender->set_simulated_loss_permille(current_loss_permille);
+        }
+        qInfo().noquote() << "[ui] 模拟丢包 =" << current_loss_permille / 10.0 << "%";
     });
 
     // 拖拽文件进来直接播放

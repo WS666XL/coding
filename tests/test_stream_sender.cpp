@@ -256,3 +256,105 @@ TEST(StreamSender, RejectsEmptyNalList)
     EXPECT_FALSE(sender.send_frame(empty, 0, 0, 0, &error));
     EXPECT_FALSE(error.empty());
 }
+
+// ---------------------------------------------------------------- 模拟丢包
+//
+// 界面上的"Loss: 5%"档位走的就是这条路径。这里验证它的边界行为：
+// 1000‰ 必须一个包都不发出去，0‰ 必须一个都不丢。
+
+TEST(StreamSender, SimulatedLossOfThousandDropsEverything)
+{
+    std::string error;
+
+    lowlat::UdpSocket receiver;
+    ASSERT_TRUE(receiver.open("127.0.0.1", 0, &error)) << error;
+
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = receiver.local_port();
+
+    lowlat::StreamSender sender;
+    ASSERT_TRUE(sender.open(config, &error)) << error;
+
+    sender.set_simulated_loss_permille(1000);
+
+    const auto nal = make_nal(0x41, 500);
+    const std::vector<lowlat::ByteSpan> nals{lowlat::ByteSpan(nal.data(), nal.size())};
+    (void)sender.send_frame(nals, 1, 3000, 0, &error);
+
+    EXPECT_EQ(sender.packets_sent(), 0u);
+    EXPECT_GT(sender.simulated_drops(), 0u);
+    EXPECT_TRUE(drain(&receiver, 1).empty());
+}
+
+TEST(StreamSender, SimulatedLossOfZeroSendsEverything)
+{
+    std::string error;
+
+    lowlat::UdpSocket receiver;
+    ASSERT_TRUE(receiver.open("127.0.0.1", 0, &error)) << error;
+
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = receiver.local_port();
+
+    lowlat::StreamSender sender;
+    ASSERT_TRUE(sender.open(config, &error)) << error;
+    sender.set_simulated_loss_permille(0);
+
+    const auto nal = make_nal(0x41, 500);
+    const std::vector<lowlat::ByteSpan> nals{lowlat::ByteSpan(nal.data(), nal.size())};
+    ASSERT_TRUE(sender.send_frame(nals, 1, 3000, 0, &error)) << error;
+
+    EXPECT_EQ(sender.packets_sent(), 1u);
+    EXPECT_EQ(sender.simulated_drops(), 0u);
+}
+
+TEST(StreamSender, SimulatedLossIsClampedToValidRange)
+{
+    std::string error;
+    lowlat::StreamSender sender;
+
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = 9;  // 只用于打开，不需要真的可达
+    ASSERT_TRUE(sender.open(config, &error)) << error;
+
+    sender.set_simulated_loss_permille(-5);
+    EXPECT_EQ(sender.simulated_loss_permille(), 0);
+
+    sender.set_simulated_loss_permille(5000);
+    EXPECT_EQ(sender.simulated_loss_permille(), 1000);
+}
+
+TEST(StreamSender, SimulatedLossIsApproximatelyRequestedRatio)
+{
+    std::string error;
+
+    lowlat::UdpSocket receiver;
+    ASSERT_TRUE(receiver.open("127.0.0.1", 0, &error)) << error;
+    ASSERT_TRUE(receiver.set_receive_buffer(4u * 1024u * 1024u, &error)) << error;
+
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = receiver.local_port();
+
+    lowlat::StreamSender sender;
+    ASSERT_TRUE(sender.open(config, &error)) << error;
+    sender.set_simulated_loss_permille(200);  // 20%
+
+    // 发 100 帧，每帧 1 个包，统计实际丢弃比例
+    const auto nal = make_nal(0x41, 200);
+    const std::vector<lowlat::ByteSpan> nals{lowlat::ByteSpan(nal.data(), nal.size())};
+    for (std::uint32_t i = 0; i < 100; ++i) {
+        (void)sender.send_frame(nals, i, i * 3000, 0, &error);
+    }
+
+    const std::uint64_t drops = sender.simulated_drops();
+    const std::uint64_t sent = sender.packets_sent();
+    ASSERT_EQ(drops + sent, 100u);
+
+    // 20% 目标，允许较宽的区间：样本只有 100 个，且用的是确定性 PRNG
+    EXPECT_GE(drops, 8u);
+    EXPECT_LE(drops, 34u);
+}

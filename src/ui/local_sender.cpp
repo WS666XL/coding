@@ -215,6 +215,23 @@ void LocalSender::run()
     running_.store(false);
 }
 
+void LocalSender::set_simulated_loss_permille(int permille) noexcept
+{
+    if (sender_) {
+        sender_->set_simulated_loss_permille(permille);
+    }
+}
+
+int LocalSender::simulated_loss_permille() const noexcept
+{
+    return sender_ ? sender_->simulated_loss_permille() : 0;
+}
+
+std::uint64_t LocalSender::simulated_drops() const noexcept
+{
+    return sender_ ? sender_->simulated_drops() : 0;
+}
+
 std::string LocalSender::last_error() const
 {
     std::lock_guard<std::mutex> guard(error_mutex_);

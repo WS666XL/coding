@@ -54,6 +54,11 @@ public:
 
     const std::string& input_path() const noexcept { return options_.input; }
 
+    // 运行期调整模拟丢包（千分比），界面上的档位选择用
+    void set_simulated_loss_permille(int permille) noexcept;
+    int simulated_loss_permille() const noexcept;
+    std::uint64_t simulated_drops() const noexcept;
+
     std::uint64_t frames_sent() const noexcept;
     int current_bitrate_kbps() const noexcept;
     int frame_width() const noexcept;
