@@ -414,6 +414,16 @@ std::int64_t FileSource::next_frame_due_us() const noexcept
         .count();
 }
 
+bool FileSource::is_live() const noexcept
+{
+    if (impl_ == nullptr) {
+        return false;
+    }
+    // ffmpeg 的 URL 都带 scheme，如 udp:// rtp:// http://；
+    // 本地路径不会出现 "://"。
+    return impl_->path.find("://") != std::string::npos;
+}
+
 void FileSource::reset_pacing() noexcept
 {
     if (impl_ == nullptr || impl_->out_fps <= 0) {

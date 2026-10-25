@@ -37,6 +37,13 @@ public:
     // 都已经过期，恢复时会连续猛发一大堆帧去"追赶"，瞬间打满链路。
     // 暂停结束调用本方法把基准平移到当前时刻。
     virtual void reset_pacing() noexcept {}
+
+    // 是否为实时源（网络流、摄像头）。
+    //
+    // 实时源在暂停期间**必须继续消费**：上游的 UDP 缓冲 / ffmpeg fifo 会持
+    // 续攒数据，如果不读，恢复时会从几秒前的积压继续播，画面永远落后。
+    // 文件源则相反——暂停就该停住，不能偷偷前进。
+    virtual bool is_live() const noexcept { return false; }
 };
 
 }  // namespace lowlat

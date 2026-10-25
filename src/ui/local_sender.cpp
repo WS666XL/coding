@@ -59,6 +59,14 @@ bool LocalSender::start(const Options& options, std::string* error)
 
     std::string create_error;
     source_ = create_capture_source(capture_options, &create_error);
+
+    // 实时源的延迟口径必须说清楚：本地拿到的帧已经被上游缓冲过，
+    // 面板上的"采集→上屏"只覆盖本进程解码之后的链路，不含上游采集与网络。
+    // 不说清楚的话，用户会看到"指标 79ms 但画面明显滞后"。
+    if (source_ != nullptr && source_->is_live()) {
+        LOWLAT_LOG_WARN("实时源：面板的端到端延迟只覆盖本进程解码之后的链路，"
+                        "不含上游采集与网络缓冲");
+    }
     if (!source_) {
         if (error != nullptr) {
             *error = create_error;
@@ -153,6 +161,21 @@ void LocalSender::run()
 
     while (!stop_.load(std::memory_order_relaxed)) {
         if (paused_.load(std::memory_order_relaxed)) {
+            if (source_ != nullptr && source_->is_live()) {
+                // 实时源不能"不读"。
+                //
+                // 暂停期间 UDP 缓冲与 ffmpeg fifo 仍在收数据（1MB fifo 在
+                // 1.5Mbps 下能存 5 秒），恢复后从积压处继续播，画面就永远
+                // 落后几秒——而且因为每帧都打上"当前时刻"的时间戳，
+                // 面板上的延迟指标还显示正常。
+                // 这里继续读取并丢弃，保证恢复时看到的是当下。
+                YuvFrame discarded;
+                std::string ignored;
+                if (!source_->next_frame(&discarded, &ignored)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+                continue;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }

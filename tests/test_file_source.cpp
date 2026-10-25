@@ -182,3 +182,24 @@ TEST(FileSource, FrameTimestampsAreMonotonic)
         previous = frame.capture_ts_us;
     }
 }
+
+// 实时源识别：暂停策略依赖它。
+//
+// 实时源（udp://）暂停时必须继续消费，否则上游缓冲堆积；
+// 本地文件暂停时必须停住，不能偷偷前进。两者行为相反，
+// 所以这个判定不能错。
+TEST(FileSource, RecognizesLiveUrlSources)
+{
+    lowlat::FileSource live("udp://0.0.0.0:5100?fifo_size=1000000", 30, false, true);
+    EXPECT_TRUE(live.is_live());
+
+    lowlat::FileSource rtp("rtp://127.0.0.1:6000", 30, false, true);
+    EXPECT_TRUE(rtp.is_live());
+
+    lowlat::FileSource local("/tmp/some_file.mp4", 30, false, true);
+    EXPECT_FALSE(local.is_live());
+
+    // 相对路径也不能被误判
+    lowlat::FileSource relative("out/demo.mp4", 30, false, true);
+    EXPECT_FALSE(relative.is_live());
+}
