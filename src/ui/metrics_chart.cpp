@@ -94,7 +94,7 @@ void MetricsChart::push_sample(double latency_ms, int bitrate_kbps)
     update();
 }
 
-void MetricsChart::set_ui_scale(double scale)
+void MetricsChart::set_ui_scale(double scale, double base_point)
 {
     if (scale < 1.0) {
         scale = 1.0;
@@ -103,6 +103,15 @@ void MetricsChart::set_ui_scale(double scale)
         scale = 2.2;
     }
     ui_scale_ = scale;
+
+    // 控件字体显式设定：painter.font() 由此派生，
+    // 不设的话刻度文字不随窗口变化。
+    if (base_point > 0.0) {
+        QFont font = this->font();
+        font.setPointSizeF(base_point * scale);
+        setFont(font);
+    }
+
     setMinimumHeight(static_cast<int>(150 * scale));
     setMaximumHeight(static_cast<int>(175 * scale));
     update();

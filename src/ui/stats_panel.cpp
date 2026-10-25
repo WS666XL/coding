@@ -46,7 +46,7 @@ StatsPanel::StatsPanel(QWidget* parent) : QWidget(parent)
     auto* outer = outer_layout_;
 
     status_ = new QLabel(QStringLiteral("● IDLE"), this);
-    apply_status_font();
+    apply_status_font(this->font().pointSizeF() > 0.0 ? this->font().pointSizeF() : 10.0);
     outer->addWidget(status_);
 
     status_detail_ = new QLabel(QStringLiteral("no data yet"), this);
@@ -99,11 +99,8 @@ StatsPanel::StatsPanel(QWidget* parent) : QWidget(parent)
 void StatsPanel::add_section(QGridLayout* grid, int row, const QString& title)
 {
     auto* label = new QLabel(title, this);
-    QFont font = label->font();
-    font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() - 0.5);
-    label->setFont(font);
     label->setStyleSheet(QStringLiteral("color: #7fb4ff; padding-top: 8px;"));
+    sections_.push_back(label);
     grid->addWidget(label, row, 0, 1, 2);
 }
 
@@ -114,9 +111,9 @@ QLabel* StatsPanel::add_row(QGridLayout* grid, int row, const QString& caption)
 
     auto* value = new QLabel(QStringLiteral("--"), this);
     value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    QFont font = value->font();
-    font.setFamily(QStringLiteral("monospace"));
-    value->setFont(font);
+
+    captions_.push_back(name);
+    values_.push_back(value);
 
     grid->addWidget(name, row, 0);
     grid->addWidget(value, row, 1);
@@ -193,20 +190,18 @@ void StatsPanel::update_metrics(const UiMetrics& metrics)
                                 .arg(drop_rate * 100.0, 0, 'f', 1));
 }
 
-void StatsPanel::apply_status_font()
+void StatsPanel::apply_status_font(double point)
 {
     if (status_ == nullptr) {
         return;
     }
-    // 状态灯比正文略大，但必须从"当前字体"派生，
-    // 否则窗口放大后应用字体变了、它还是老大小。
     QFont font = this->font();
-    font.setPointSizeF(font.pointSizeF() + 2.0 * ui_scale_);
+    font.setPointSizeF(point * 1.25);
     font.setBold(true);
     status_->setFont(font);
 }
 
-void StatsPanel::set_ui_scale(double scale)
+void StatsPanel::set_ui_scale(double scale, double base_point)
 {
     if (scale < 1.0) {
         scale = 1.0;
@@ -217,14 +212,52 @@ void StatsPanel::set_ui_scale(double scale)
     ui_scale_ = scale;
 
     setMinimumWidth(static_cast<int>(310 * scale));
-    setMaximumWidth(static_cast<int>(350 * scale));
+    setMaximumWidth(static_cast<int>(360 * scale));
 
     if (outer_layout_ != nullptr) {
         const int margin = static_cast<int>(14 * scale);
         outer_layout_->setContentsMargins(margin, margin, margin, margin);
         outer_layout_->setSpacing(static_cast<int>(6 * scale));
     }
-    apply_status_font();
-}
 
+    // 两列必须一起重设。之前只给数值列设了 monospace 字体（创建时的字号），
+    // 标题列则依赖继承——缩放后一列变大、一列停在原处，看起来"左边那列特别小"。
+    const double point = base_point * scale;
+    if (point <= 0.0) {
+        return;
+    }
+
+    QFont caption_font = this->font();
+    caption_font.setPointSizeF(point);
+    for (QLabel* label : captions_) {
+        if (label != nullptr) {
+            label->setFont(caption_font);
+        }
+    }
+
+    QFont value_font = this->font();
+    value_font.setFamily(QStringLiteral("monospace"));
+    value_font.setPointSizeF(point);
+    for (QLabel* label : values_) {
+        if (label != nullptr) {
+            label->setFont(value_font);
+        }
+    }
+
+    QFont section_font = this->font();
+    section_font.setPointSizeF(point * 0.92);
+    section_font.setBold(true);
+    for (QLabel* label : sections_) {
+        if (label != nullptr) {
+            label->setFont(section_font);
+        }
+    }
+
+    apply_status_font(point);
+    if (status_detail_ != nullptr) {
+        QFont detail_font = this->font();
+        detail_font.setPointSizeF(point * 0.95);
+        status_detail_->setFont(detail_font);
+    }
+}
 }  // namespace lowlat

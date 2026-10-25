@@ -3,6 +3,7 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <vector>
 #include <QWidget>
 
 #include "ui/ui_metrics.hpp"
@@ -23,15 +24,21 @@ public:
 
     // 随窗口缩放：字号由应用字体承载，这里负责宽度、间距与状态灯字号。
     // 放大窗口时若不缩放，右侧文字会显得越来越小。
-    void set_ui_scale(double scale);
+    // base_point 是缩放前的基准字号，由上层传入。
+    // 不依赖字体继承：标题列与数值列都要显式重设，
+    // 否则一列跟得上缩放、另一列被冻结在创建时的字号。
+    void set_ui_scale(double scale, double base_point);
 
 private:
     void add_section(QGridLayout* grid, int row, const QString& title);
     QLabel* add_row(QGridLayout* grid, int row, const QString& caption);
-    void apply_status_font();
+    void apply_status_font(double point);
 
     double ui_scale_{1.0};
     QVBoxLayout* outer_layout_{nullptr};
+    std::vector<QLabel*> captions_;
+    std::vector<QLabel*> values_;
+    std::vector<QLabel*> sections_;
 
     QLabel* status_{nullptr};
     QLabel* status_detail_{nullptr};

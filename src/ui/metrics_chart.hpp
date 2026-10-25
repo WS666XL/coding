@@ -23,7 +23,7 @@ public:
     void clear();
 
     // 随窗口缩放：高度、内边距与刻度字号
-    void set_ui_scale(double scale);
+    void set_ui_scale(double scale, double base_point);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

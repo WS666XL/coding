@@ -237,8 +237,9 @@ int run_live_mode(const AppOptions& options)
         font.setPointSizeF(base_font.pointSizeF() * scale);
         QApplication::setFont(font);
 
-        panel->set_ui_scale(scale);
-        chart->set_ui_scale(scale);
+        const double base_point = base_font.pointSizeF() > 0.0 ? base_font.pointSizeF() : 10.0;
+        panel->set_ui_scale(scale, base_point);
+        chart->set_ui_scale(scale, base_point);
         toolbar->setStyleSheet(QStringLiteral("QToolBar { spacing: %1px; }")
                                    .arg(static_cast<int>(6 * scale)));
     };
