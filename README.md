@@ -102,6 +102,10 @@ sudo systemctl status lowlat-receiver
 # 0) 打开界面：点 "Open file..." 或把视频拖进窗口（推荐先试这个）
 ./scripts/demo.sh
 
+# 0c) 用 Windows 摄像头做输入（关闭窗口会自动停止采集）
+./scripts/camera.sh
+./scripts/camera.sh --loss 20          # 顺便模拟 20% 丢包
+
 # 0b) 命令行直接播某个文件，并模拟 5% 丢包（界面上的 Loss 下拉框同一个开关）
 ./build/src/ui/lowlat_ui --local 你的视频.mp4 --loss 5
 
