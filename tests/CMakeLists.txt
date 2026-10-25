@@ -28,7 +28,12 @@ add_executable(lowlat_tests
     test_bandwidth_estimator.cpp
     test_control_message.cpp
     test_file_source.cpp
+    test_local_sender.cpp
 )
+
+# LocalSender 只依赖 capture/codec/transport，没有 Qt 依赖，
+# 因此可以直接编进测试二进制来验证暂停/恢复
+target_sources(lowlat_tests PRIVATE "${PROJECT_SOURCE_DIR}/src/ui/local_sender.cpp")
 
 target_link_libraries(lowlat_tests
     PRIVATE

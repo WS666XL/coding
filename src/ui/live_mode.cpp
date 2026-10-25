@@ -239,6 +239,9 @@ int run_live_mode(const AppOptions& options)
         start_file(path.toStdString());
     });
 
+    // 记住正常状态下的工具条文案，暂停时临时替换再还原
+    QString normal_info_text;
+
     QObject::connect(pause_action, &QAction::triggered, video, [&]() {
         if (!local_sender) {
             return;
@@ -246,6 +249,20 @@ int run_live_mode(const AppOptions& options)
         const bool next = !local_sender->paused();
         local_sender->set_paused(next);
         pause_action->setText(next ? QStringLiteral("Resume") : QStringLiteral("Pause"));
+        // 暂停时光靠按钮文字容易被忽略，右上角状态也一起改，
+        // 免得用户以为程序卡死了
+        if (next) {
+            if (normal_info_text.isEmpty()) {
+                normal_info_text = info_label->text();
+            }
+            info_label->setText(QStringLiteral("[PAUSED] click Resume to continue"));
+            info_label->setStyleSheet(QStringLiteral("color:#fbc02d; font-weight:bold; "
+                                                     "padding-right:8px;"));
+        } else {
+            info_label->setText(normal_info_text);
+            info_label->setStyleSheet(QStringLiteral("color:#9a9aa2; padding-right:8px;"));
+            normal_info_text.clear();
+        }
     });
 
     QObject::connect(restart_action, &QAction::triggered, video, [&]() {
