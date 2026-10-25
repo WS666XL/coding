@@ -228,7 +228,7 @@ int run_live_mode(const AppOptions& options)
         scale = std::clamp(scale, 1.0, 2.0);
         // 只有明显变化才重设字体：QApplication::setFont 会触发全局重排，
         // 拖动窗口时每次都调用会让界面发涩。
-        if (std::abs(scale - applied_scale) < 0.06) {
+        if (std::abs(scale - applied_scale) < 0.04) {
             return;
         }
         applied_scale = scale;
@@ -238,10 +238,40 @@ int run_live_mode(const AppOptions& options)
         QApplication::setFont(font);
 
         const double base_point = base_font.pointSizeF() > 0.0 ? base_font.pointSizeF() : 10.0;
+
+        // 工具条的子控件不会可靠地跟随 QApplication::setFont。
+        // addAction 时 QToolBar 自己创建的 QToolButton、手动 addWidget 的下拉框，
+        // 字体在创建那一刻就定了；只调 setFont 的话要等下一次布局才刷新——
+        // 表现就是"启动时工具条字很小，拖动一下窗口才正常"。
+        // 这里逐个显式设置，并强制重新布局。
+        toolbar->setFont(font);
+        for (QWidget* child : toolbar->findChildren<QWidget*>()) {
+            child->setFont(font);
+        }
+        // 工具条原来是默认浅色，和深色面板拼在一起很割裂。
+        // 一旦给 QToolBar 设样式表，Qt 就会改用样式表里的配色，
+        // 所以背景、文字、控件外观都要一起写清楚。
+        const int spacing = static_cast<int>(6 * scale);
+        const int padding = static_cast<int>(4 * scale);
+        toolbar->setStyleSheet(
+            QStringLiteral(
+                "QToolBar { background: #1e1e22; border: none; spacing: %1px; padding: 2px; }"
+                "QToolButton { color: #d8d8dc; padding: %2px %3px; }"
+                "QToolButton:hover { background: #2f2f36; border-radius: 4px; }"
+                "QToolButton:pressed { background: #3a3a44; }"
+                "QComboBox { color: #d8d8dc; background: #2a2a30;"
+                "            border: 1px solid #3a3a44; border-radius: 4px;"
+                "            padding: %2px %3px; }"
+                "QComboBox QAbstractItemView { background: #2a2a30; color: #d8d8dc;"
+                "                             selection-background-color: #3a3a44; }"
+                "QLabel { color: #9a9aa2; }")
+                .arg(spacing)
+                .arg(padding)
+                .arg(padding * 2));
+        toolbar->updateGeometry();
+
         panel->set_ui_scale(scale, base_point);
         chart->set_ui_scale(scale, base_point);
-        toolbar->setStyleSheet(QStringLiteral("QToolBar { spacing: %1px; }")
-                                   .arg(static_cast<int>(6 * scale)));
     };
 
     window.on_resize = [&](int height) { apply_ui_scale(height); };
@@ -357,6 +387,10 @@ int run_live_mode(const AppOptions& options)
     video->set_file_drop_handler([&](const std::string& path) { start_file(path); });
 
     window.show();
+
+    // show() 之后控件才有真实尺寸。用实际高度再应用一次，
+    // 否则启动时用的是命令行传入的尺寸，可能和布局最终算出的大小差一截。
+    QTimer::singleShot(0, &window, [&]() { apply_ui_scale(window.height()); });
 
     // ---------------------------------------------------------------- 统计
     Stats e2e_stats;
