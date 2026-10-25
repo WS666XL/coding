@@ -1,0 +1,39 @@
+[Unit]
+Description=lowlat-video receiver (RTP-lite over UDP)
+Documentation=file:///usr/share/doc/lowlat-video/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 不创建固定系统用户：DynamicUser 每次启动分配临时 UID，
+# StateDirectory 负责创建 /var/lib/lowlat 并把它 bind 进来。
+# 这样包安装时不需要 postinst 脚本去 useradd。
+DynamicUser=yes
+StateDirectory=lowlat
+WorkingDirectory=/var/lib/lowlat
+
+ExecStart=/usr/bin/lowlat_receiver \
+    --bind 0.0.0.0:5000 \
+    --output /var/lib/lowlat/recv.h264 \
+    --nack \
+    --log-level info
+
+Restart=on-failure
+RestartSec=2
+
+# 收到 SIGTERM 后程序会走优雅退出路径（冲刷文件、返回 3），
+# 给足时间但不无限等待。
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# 最小权限：只留网络与自己的状态目录
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/lowlat
+
+[Install]
+WantedBy=multi-user.target
