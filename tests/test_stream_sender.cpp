@@ -358,3 +358,38 @@ TEST(StreamSender, SimulatedLossIsApproximatelyRequestedRatio)
     EXPECT_GE(drops, 8u);
     EXPECT_LE(drops, 34u);
 }
+
+// 未指定 SSRC 时每个发送端必须拿到不同的值。
+//
+// 界面里换文件会新建发送端；如果 SSRC 重复，接收端无法识别"这是新流"，
+// 会把序列号从 0 重新开始的包全当作倒退的重传包，画面就冻住了。
+TEST(StreamSender, AutoGeneratesDistinctSsrcPerInstance)
+{
+    std::string error;
+
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = 9;  // 打开即可，不需要真的发出去
+
+    lowlat::StreamSender first;
+    ASSERT_TRUE(first.open(config, &error)) << error;
+    lowlat::StreamSender second;
+    ASSERT_TRUE(second.open(config, &error)) << error;
+
+    EXPECT_NE(first.ssrc(), 0u);
+    EXPECT_NE(second.ssrc(), 0u);
+    EXPECT_NE(first.ssrc(), second.ssrc()) << "两次新建的发送端 SSRC 相同，换流无法被识别";
+}
+
+TEST(StreamSender, HonoursExplicitSsrc)
+{
+    std::string error;
+    lowlat::StreamSender::Config config;
+    config.destination.address = "127.0.0.1";
+    config.destination.port = 9;
+    config.ssrc = 0xDEADBEEFu;
+
+    lowlat::StreamSender sender;
+    ASSERT_TRUE(sender.open(config, &error)) << error;
+    EXPECT_EQ(sender.ssrc(), 0xDEADBEEFu);
+}

@@ -98,6 +98,9 @@ public:
     // 在发送端丢弃的好处是完全进程内可控，且链路之后的行为与真实丢包一致——
     // 收端看到的是序列号缺口，照样触发 NACK 与 FEC 恢复。
     // 区别只在于丢包发生在"上行末端"而不是链路中间，对恢复机制而言没有差别。
+    // 实际使用的 SSRC（未配置时会自动生成），便于测试与排障
+    std::uint32_t ssrc() const noexcept { return config_.ssrc; }
+
     void set_simulated_loss_permille(int permille) noexcept;
     int simulated_loss_permille() const noexcept { return simulated_loss_permille_; }
     std::uint64_t simulated_drops() const noexcept { return simulated_drops_; }

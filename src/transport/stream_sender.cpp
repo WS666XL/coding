@@ -108,6 +108,16 @@ bool StreamSender::open(const Config& config, std::string* error)
         config.max_payload - RtpLiteHeader::kBaseSize - RtpLiteHeader::kExtensionSize;
     fec_encoder_ = XorFecEncoder(fec_config);
 
+    cache_ = RetransmitCache(config.retransmit_capacity);
+
+    BandwidthEstimator::Config estimator_config;
+    estimator_config.start_bps = static_cast<std::int64_t>(config.start_bitrate_kbps) * 1000;
+    estimator_config.min_bps = static_cast<std::int64_t>(config.min_bitrate_kbps) * 1000;
+    estimator_config.max_bps = static_cast<std::int64_t>(config.max_bitrate_kbps) * 1000;
+    estimator_ = BandwidthEstimator(estimator_config);
+    feedback_received_ = 0;
+
+    config_ = config;
     // 未指定 SSRC 时生成一个唯一值，让接收端能识别出"新流"
     if (config_.ssrc == 0) {
         static std::atomic<std::uint32_t> ssrc_counter{0};
@@ -121,16 +131,6 @@ bool StreamSender::open(const Config& config, std::string* error)
         config_.ssrc = candidate;
     }
 
-    cache_ = RetransmitCache(config.retransmit_capacity);
-
-    BandwidthEstimator::Config estimator_config;
-    estimator_config.start_bps = static_cast<std::int64_t>(config.start_bitrate_kbps) * 1000;
-    estimator_config.min_bps = static_cast<std::int64_t>(config.min_bitrate_kbps) * 1000;
-    estimator_config.max_bps = static_cast<std::int64_t>(config.max_bitrate_kbps) * 1000;
-    estimator_ = BandwidthEstimator(estimator_config);
-    feedback_received_ = 0;
-
-    config_ = config;
     sequence_ = 0;
     packets_sent_ = 0;
     bytes_sent_ = 0;
