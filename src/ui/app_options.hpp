@@ -23,6 +23,8 @@ struct AppOptions {
     bool feedback{false};
     int hold_ms{60};
     int bitrate_kbps{2000};  // 单进程模式下的目标码率
+    int window_width{1600};  // 初始窗口尺寸，界面字号按高度缩放
+    int window_height{760};
     int simulated_loss_percent{0};  // 发送端模拟丢包百分比
 };
 

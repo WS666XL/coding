@@ -22,10 +22,15 @@ public:
 
     void clear();
 
+    // 随窗口缩放：高度、内边距与刻度字号
+    void set_ui_scale(double scale);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    double ui_scale_{1.0};
+
     std::deque<double> latency_;
     std::deque<double> bitrate_;
 };

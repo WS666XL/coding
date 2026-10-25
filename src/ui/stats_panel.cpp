@@ -1,5 +1,7 @@
 #include "ui/stats_panel.hpp"
 
+#include <algorithm>
+
 #include <QFont>
 #include <QPalette>
 #include <QVBoxLayout>
@@ -37,15 +39,14 @@ StatsPanel::StatsPanel(QWidget* parent) : QWidget(parent)
     setMinimumWidth(310);
     setMaximumWidth(350);
 
-    auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(14, 14, 14, 14);
-    outer->setSpacing(6);
+    outer_layout_ = new QVBoxLayout(this);
+    outer_layout_->setContentsMargins(14, 14, 14, 14);
+    outer_layout_->setSpacing(6);
+
+    auto* outer = outer_layout_;
 
     status_ = new QLabel(QStringLiteral("● IDLE"), this);
-    QFont status_font = status_->font();
-    status_font.setPointSizeF(status_font.pointSizeF() + 2.0);
-    status_font.setBold(true);
-    status_->setFont(status_font);
+    apply_status_font();
     outer->addWidget(status_);
 
     status_detail_ = new QLabel(QStringLiteral("no data yet"), this);
@@ -142,8 +143,16 @@ void StatsPanel::update_metrics(const UiMetrics& metrics)
     // 显示累计接收量而不是"瞬时码率"：后者需要额外的时间窗，容易和日志口径不一致
     received_->setText(QStringLiteral("%1 KB").arg(metrics.bytes / 1024));
 
-    source_->setText(metrics.source_label.empty() ? QStringLiteral("--")
-                                                  : QString::fromStdString(metrics.source_label));
+    // 长名字（URL、长文件名）必须省略，否则会撑破标签列、
+    // 甚至画到左边的标题区上。
+    if (metrics.source_label.empty()) {
+        source_->setText(QStringLiteral("--"));
+    } else {
+        const QString full = QString::fromStdString(metrics.source_label);
+        const int available = std::max(80, static_cast<int>(width() * 0.55));
+        source_->setText(source_->fontMetrics().elidedText(full, Qt::ElideMiddle, available));
+        source_->setToolTip(full);
+    }
     resolution_->setText(metrics.video_width > 0
                              ? QStringLiteral("%1x%2").arg(metrics.video_width).arg(
                                    metrics.video_height)
@@ -182,6 +191,40 @@ void StatsPanel::update_metrics(const UiMetrics& metrics)
     status_detail_->setText(QStringLiteral("p99 %1 ms  ·  drop %2%")
                                 .arg(metrics.e2e_p99_ms, 0, 'f', 0)
                                 .arg(drop_rate * 100.0, 0, 'f', 1));
+}
+
+void StatsPanel::apply_status_font()
+{
+    if (status_ == nullptr) {
+        return;
+    }
+    // 状态灯比正文略大，但必须从"当前字体"派生，
+    // 否则窗口放大后应用字体变了、它还是老大小。
+    QFont font = this->font();
+    font.setPointSizeF(font.pointSizeF() + 2.0 * ui_scale_);
+    font.setBold(true);
+    status_->setFont(font);
+}
+
+void StatsPanel::set_ui_scale(double scale)
+{
+    if (scale < 1.0) {
+        scale = 1.0;
+    }
+    if (scale > 2.2) {
+        scale = 2.2;
+    }
+    ui_scale_ = scale;
+
+    setMinimumWidth(static_cast<int>(310 * scale));
+    setMaximumWidth(static_cast<int>(350 * scale));
+
+    if (outer_layout_ != nullptr) {
+        const int margin = static_cast<int>(14 * scale);
+        outer_layout_->setContentsMargins(margin, margin, margin, margin);
+        outer_layout_->setSpacing(static_cast<int>(6 * scale));
+    }
+    apply_status_font();
 }
 
 }  // namespace lowlat

@@ -11,6 +11,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QMainWindow>
+#include <QResizeEvent>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -18,7 +19,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -63,6 +66,41 @@ QString video_filter()
         "Video files (*.mp4 *.mkv *.avi *.mov *.flv *.webm *.ts *.m4v *.h264 *.h265 *.y4m);;"
         "All files (*)");
 }
+
+// 来源标签：URL 只保留 scheme://host:port，普通路径取文件名。
+// 不截短的话，udp:// 的查询串会把工具条和面板整行撑满。
+std::string short_source_label(const std::string& path)
+{
+    const std::size_t scheme = path.find("://");
+    if (scheme != std::string::npos) {
+        // 端口后面可能直接跟查询串（udp://0.0.0.0:5100?fifo_size=...），
+        // 所以要在 '/' 和 '?' 里取更靠前的那个作为截断点。
+        std::size_t end = path.find('/', scheme + 3);
+        const std::size_t query = path.find('?', scheme + 3);
+        if (query != std::string::npos && (end == std::string::npos || query < end)) {
+            end = query;
+        }
+        return end == std::string::npos ? path : path.substr(0, end);
+    }
+    const std::size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+// 主窗口：把尺寸变化转成缩放回调。
+// 不使用信号/槽，所以不需要 moc。
+class ScaledWindow final : public QMainWindow {
+public:
+    std::function<void(int)> on_resize;
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QMainWindow::resizeEvent(event);
+        if (on_resize) {
+            on_resize(height());
+        }
+    }
+};
 
 }  // namespace
 
@@ -112,7 +150,7 @@ int run_live_mode(const AppOptions& options)
     int current_loss_permille = std::clamp(options.simulated_loss_percent, 0, 100) * 10;
 
     // ---------------------------------------------------------------- 界面
-    QMainWindow window;
+    ScaledWindow window;
     auto* central = new QWidget(&window);
     auto* root_layout = new QVBoxLayout(central);
     root_layout->setContentsMargins(0, 0, 0, 0);
@@ -133,7 +171,8 @@ int run_live_mode(const AppOptions& options)
     root_layout->addWidget(chart, 0);
 
     window.setCentralWidget(central);
-    window.resize(1600, 760);
+
+
 
     auto* toolbar = window.addToolBar(QStringLiteral("Controls"));
     toolbar->setMovable(false);
@@ -175,6 +214,39 @@ int run_live_mode(const AppOptions& options)
     info_label->setStyleSheet(QStringLiteral("color:#9a9aa2; padding-right:8px;"));
     toolbar->addWidget(info_label);
 
+    // ---------------------------------------------------------------- 缩放
+    // 字号必须随窗口尺寸走。
+    //
+    // 之前所有字号都取 Qt 默认值（约 10pt），窗口最大化到 2K 屏后
+    // 面板与工具条的文字相对画面显得极小——"放大屏幕反而更看不清"。
+    // 这里按窗口高度对 760 的比值整体缩放，并同步面板宽度与曲线高度。
+    const QFont base_font = QApplication::font();
+    double applied_scale = 0.0;
+
+    auto apply_ui_scale = [&](int window_height) {
+        double scale = static_cast<double>(window_height) / 760.0;
+        scale = std::clamp(scale, 1.0, 2.0);
+        // 只有明显变化才重设字体：QApplication::setFont 会触发全局重排，
+        // 拖动窗口时每次都调用会让界面发涩。
+        if (std::abs(scale - applied_scale) < 0.06) {
+            return;
+        }
+        applied_scale = scale;
+
+        QFont font = base_font;
+        font.setPointSizeF(base_font.pointSizeF() * scale);
+        QApplication::setFont(font);
+
+        panel->set_ui_scale(scale);
+        chart->set_ui_scale(scale);
+        toolbar->setStyleSheet(QStringLiteral("QToolBar { spacing: %1px; }")
+                                   .arg(static_cast<int>(6 * scale)));
+    };
+
+    window.on_resize = [&](int height) { apply_ui_scale(height); };
+    window.resize(options.window_width, options.window_height);
+    apply_ui_scale(options.window_height);
+
     // ---------------------------------------------------------------- 发送端
     std::unique_ptr<LocalSender> local_sender;
     std::string current_file;
@@ -211,7 +283,7 @@ int run_live_mode(const AppOptions& options)
         pause_action->setText(QStringLiteral("Pause"));
         restart_action->setEnabled(true);
 
-        const QString name = QFileInfo(QString::fromStdString(path)).fileName();
+        const QString name = QString::fromStdString(short_source_label(path));
         info_label->setText(QStringLiteral("%1  ·  %2x%3  ·  %4 kbps")
                                 .arg(name)
                                 .arg(local_sender->frame_width())
@@ -389,9 +461,8 @@ int run_live_mode(const AppOptions& options)
         metrics.duplicate_dropped = rs.duplicate_nals_dropped;
 
         if (local_sender && local_sender->running()) {
-            metrics.source_label = QFileInfo(QString::fromStdString(local_sender->input_path()))
-                                       .fileName()
-                                       .toStdString();
+            const std::string label = short_source_label(local_sender->input_path());
+            metrics.source_label = label;
             metrics.video_width = local_sender->frame_width();
             metrics.video_height = local_sender->frame_height();
             metrics.target_bitrate_kbps = local_sender->current_bitrate_kbps();

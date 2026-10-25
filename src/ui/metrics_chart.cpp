@@ -20,15 +20,18 @@ constexpr std::size_t kCapacity = 240;
 // 画一格曲线。values 已归一化到 [0,1]。
 void draw_series(QPainter& painter, const QRectF& area, const std::deque<double>& values,
                  const QColor& color, double max_value, const QString& title,
-                 const QString& current)
+                 const QString& current, double scale)
 {
+    const int title_height = static_cast<int>(14 * scale);
     painter.setPen(QColor(0x8a, 0x8a, 0x92));
     QFont label_font = painter.font();
     label_font.setPointSizeF(std::max(7.0, label_font.pointSizeF() - 2.0));
     painter.setFont(label_font);
-    painter.drawText(QRectF(area.left(), area.top() - 14, area.width() / 2, 14),
+    painter.drawText(QRectF(area.left(), area.top() - title_height, area.width() / 2,
+                            title_height),
                      Qt::AlignLeft | Qt::AlignVCenter, title);
-    painter.drawText(QRectF(area.left() + area.width() / 2, area.top() - 14, area.width() / 2, 14),
+    painter.drawText(QRectF(area.left() + area.width() / 2, area.top() - title_height,
+                            area.width() / 2, title_height),
                      Qt::AlignRight | Qt::AlignVCenter, current);
 
     // 底纹与网格
@@ -91,6 +94,20 @@ void MetricsChart::push_sample(double latency_ms, int bitrate_kbps)
     update();
 }
 
+void MetricsChart::set_ui_scale(double scale)
+{
+    if (scale < 1.0) {
+        scale = 1.0;
+    }
+    if (scale > 2.2) {
+        scale = 2.2;
+    }
+    ui_scale_ = scale;
+    setMinimumHeight(static_cast<int>(150 * scale));
+    setMaximumHeight(static_cast<int>(175 * scale));
+    update();
+}
+
 void MetricsChart::clear()
 {
     latency_.clear();
@@ -105,13 +122,19 @@ void MetricsChart::paintEvent(QPaintEvent* event)
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.fillRect(rect(), QColor(30, 30, 34));
 
-    const QRectF content = QRectF(rect()).adjusted(kPadding, kPadding + 14, -kPadding, -kPadding);
-    const double row_height = (content.height() - kRowGap) / 2.0;
+    const int pad = static_cast<int>(kPadding * ui_scale_);
+    const int label_width = static_cast<int>(kLabelWidth * ui_scale_);
+    const int title_height = static_cast<int>(14 * ui_scale_);
+    const double row_gap = kRowGap * ui_scale_;
 
-    const QRectF latency_area(content.left() + kLabelWidth, content.top(),
-                              content.width() - kLabelWidth, row_height);
-    const QRectF bitrate_area(content.left() + kLabelWidth, content.top() + row_height + kRowGap,
-                              content.width() - kLabelWidth, row_height);
+    const QRectF content =
+        QRectF(rect()).adjusted(pad, pad + title_height, -pad, -pad);
+    const double row_height = (content.height() - row_gap) / 2.0;
+
+    const QRectF latency_area(content.left() + label_width, content.top(),
+                              content.width() - label_width, row_height);
+    const QRectF bitrate_area(content.left() + label_width, content.top() + row_height + row_gap,
+                              content.width() - label_width, row_height);
 
     // 纵轴自适应：取历史最大值并留 20% 余量，避免曲线贴顶
     double latency_max = 1.0;
@@ -129,22 +152,25 @@ void MetricsChart::paintEvent(QPaintEvent* event)
     draw_series(painter, latency_area, latency_, QColor(0x7f, 0xb4, 0xff),
                 latency_max, QStringLiteral("LATENCY p99 (ms)"),
                 latency_.empty() ? QStringLiteral("--")
-                                 : QStringLiteral("%1 ms").arg(latency_.back(), 0, 'f', 0));
+                                 : QStringLiteral("%1 ms").arg(latency_.back(), 0, 'f', 0),
+                ui_scale_);
 
     draw_series(painter, bitrate_area, bitrate_, QColor(0x66, 0xbb, 0x6a),
                 bitrate_max, QStringLiteral("TARGET BITRATE (kbps)"),
                 bitrate_.empty() ? QStringLiteral("--")
-                                 : QStringLiteral("%1 kbps").arg(bitrate_.back(), 0, 'f', 0));
+                                 : QStringLiteral("%1 kbps").arg(bitrate_.back(), 0, 'f', 0),
+                ui_scale_);
 
     // 左侧纵轴刻度（只标最大值，够用）
     painter.setPen(QColor(0x8a, 0x8a, 0x92));
     QFont axis_font = painter.font();
     axis_font.setPointSizeF(std::max(7.0, axis_font.pointSizeF() - 2.0));
     painter.setFont(axis_font);
-    painter.drawText(QRectF(content.left(), latency_area.top(), kLabelWidth - 6, 12),
+    const int tick_height = static_cast<int>(12 * ui_scale_);
+    painter.drawText(QRectF(content.left(), latency_area.top(), label_width - 6, tick_height),
                      Qt::AlignRight | Qt::AlignVCenter,
                      QString::number(static_cast<int>(latency_max)));
-    painter.drawText(QRectF(content.left(), bitrate_area.top(), kLabelWidth - 6, 12),
+    painter.drawText(QRectF(content.left(), bitrate_area.top(), label_width - 6, tick_height),
                      Qt::AlignRight | Qt::AlignVCenter,
                      QString::number(static_cast<int>(bitrate_max)));
 }

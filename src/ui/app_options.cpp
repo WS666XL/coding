@@ -67,6 +67,21 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
             if (!next_int(&options->hold_ms)) return false;
         } else if (key == "--bitrate") {
             if (!next_int(&options->bitrate_kbps)) return false;
+        } else if (key == "--window") {
+            // 形如 1920x1080
+            std::string value;
+            if (!next_string(&value)) return false;
+            const std::size_t sep = value.find('x');
+            if (sep == std::string::npos) {
+                *error = "--window 需要 WxH 格式，如 1920x1080";
+                return false;
+            }
+            options->window_width = std::atoi(value.substr(0, sep).c_str());
+            options->window_height = std::atoi(value.substr(sep + 1).c_str());
+            if (options->window_width < 640 || options->window_height < 400) {
+                *error = "--window 尺寸过小";
+                return false;
+            }
         } else if (key == "--loss") {
             if (!next_int(&options->simulated_loss_percent)) return false;
         } else if (key == "--nack") {

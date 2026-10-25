@@ -2,6 +2,7 @@
 
 #include <QGridLayout>
 #include <QLabel>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include "ui/ui_metrics.hpp"
@@ -20,9 +21,17 @@ public:
 
     void update_metrics(const UiMetrics& metrics);
 
+    // 随窗口缩放：字号由应用字体承载，这里负责宽度、间距与状态灯字号。
+    // 放大窗口时若不缩放，右侧文字会显得越来越小。
+    void set_ui_scale(double scale);
+
 private:
     void add_section(QGridLayout* grid, int row, const QString& title);
     QLabel* add_row(QGridLayout* grid, int row, const QString& caption);
+    void apply_status_font();
+
+    double ui_scale_{1.0};
+    QVBoxLayout* outer_layout_{nullptr};
 
     QLabel* status_{nullptr};
     QLabel* status_detail_{nullptr};
