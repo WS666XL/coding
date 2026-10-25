@@ -63,12 +63,25 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 
 ## 文档
 
+**学习用**（按顺序读，从全景到细节）：
+
 | 文档 | 内容 |
 |---|---|
-| [docs/protocol.md](docs/protocol.md) | 协议规范：RTP-lite 头字段逐字节布局、FU-A 分片、XOR FEC 载荷、反向控制通道、收发时序 |
-| [docs/benchmark.md](docs/benchmark.md) | 四组压测：丢包档位扫描、抖动缓冲深度、端到端延迟构成、拥塞控制 |
-| [docs/bench-raw.csv](docs/bench-raw.csv) | 36 次压测的原始数据（文档表格的来源，可复算） |
-| [docs/interview.md](docs/interview.md) | 面试问答：常见追问、实测数据支撑、以及明确不该说什么 |
+| [docs/GUIDE.md](docs/GUIDE.md) | 导航：学习路线 / 面试速查 |
+| [docs/01-system-overview.md](docs/01-system-overview.md) | 系统全景：模块划分、一帧的 14 步旅程、线程模型、关键常量 |
+| [docs/02-code-walkthrough.md](docs/02-code-walkthrough.md) | 代码导读：目录树、各模块职责、推荐阅读顺序 |
+| [docs/03-key-designs.md](docs/03-key-designs.md) | 12 个关键设计：问题 → 方案 → 代价 |
+| [docs/05-pitfalls.md](docs/05-pitfalls.md) | 17 个真实 bug 的现象、根因、修法、教训 |
+
+**参考用**：
+
+| 文档 | 内容 |
+|---|---|
+| [docs/protocol.md](docs/protocol.md) | 协议规范：RTP-lite 逐字节布局、FU-A、XOR FEC、控制报文、时序 |
+| [docs/benchmark.md](docs/benchmark.md) | 四个实验：丢包扫描、抖动缓冲、延迟构成、拥塞控制 |
+| [docs/bench-raw.csv](docs/bench-raw.csv) | 36 次压测原始数据（表格来源，可复算） |
+| [docs/interview.md](docs/interview.md) | 面试问答 + 追问陷阱 + 不该说什么 |
+| [docs/04-build-and-run.md](docs/04-build-and-run.md) | 构建、运行、摄像头、压测、打包、排障 |
 
 ## 构建
 
