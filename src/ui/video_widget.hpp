@@ -5,7 +5,10 @@
 #include <QOpenGLWidget>
 #include <QString>
 
+#include <QString>
+
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -49,6 +52,10 @@ public:
     bool has_frame() const noexcept { return has_frame_; }
     QString gl_info() const { return gl_info_; }
 
+    // 拖一个视频文件进来就播放。用回调而不是 Qt 信号：
+    // 本类没有 Q_OBJECT，加信号需要开 AUTOMOC，为一个拖拽功能不值得。
+    void set_file_drop_handler(std::function<void(const std::string&)> handler);
+
     // 已上传的纹理尺寸（用于外部核对是否与视频一致）
     int texture_width() const noexcept { return texture_width_; }
     int texture_height() const noexcept { return texture_height_; }
@@ -57,6 +64,9 @@ protected:
     void initializeGL() override;
     void paintGL() override;
     void resizeGL(int width, int height) override;
+
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
 private:
     void ensure_textures(int width, int height);
@@ -76,6 +86,7 @@ private:
 
     std::vector<std::uint8_t> staging_;
     QString gl_info_;
+    std::function<void(const std::string&)> drop_handler_;
 };
 
 }  // namespace lowlat

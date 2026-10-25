@@ -1,9 +1,14 @@
 #include "ui/video_widget.hpp"
 
 #include <QDebug>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QRectF>
+#include <QUrl>
 
 #include <cstring>
+#include <utility>
 
 namespace lowlat {
 namespace {
@@ -55,6 +60,37 @@ void main()
 VideoWidget::VideoWidget(QWidget* parent) : QOpenGLWidget(parent)
 {
     setMinimumSize(160, 90);
+    setAcceptDrops(true);  // 允许把视频文件拖进来
+}
+
+void VideoWidget::set_file_drop_handler(std::function<void(const std::string&)> handler)
+{
+    drop_handler_ = std::move(handler);
+}
+
+void VideoWidget::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (event->mimeData() != nullptr && event->mimeData()->hasUrls() &&
+        drop_handler_ != nullptr) {
+        event->acceptProposedAction();
+        return;
+    }
+    QOpenGLWidget::dragEnterEvent(event);
+}
+
+void VideoWidget::dropEvent(QDropEvent* event)
+{
+    if (event->mimeData() == nullptr || !event->mimeData()->hasUrls() ||
+        drop_handler_ == nullptr) {
+        QOpenGLWidget::dropEvent(event);
+        return;
+    }
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.isEmpty() || !urls.first().isLocalFile()) {
+        return;
+    }
+    event->acceptProposedAction();
+    drop_handler_(urls.first().toLocalFile().toStdString());
 }
 
 VideoWidget::~VideoWidget()

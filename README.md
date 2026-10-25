@@ -79,7 +79,10 @@ sudo systemctl status lowlat-receiver
 ## 运行
 
 ```bash
-# 0) 单机播放任意视频文件：一个进程跑完整链路（推荐先试这个）
+# 0) 打开界面：点 "Open file..." 或把视频拖进窗口（推荐先试这个）
+./scripts/demo.sh
+
+# 0b) 命令行直接播某个文件
 ./build/src/ui/lowlat_ui --local 你的视频.mp4
 
 # 1) 命令行落盘：发送 300 帧并接收保存

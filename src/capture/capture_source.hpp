@@ -30,6 +30,13 @@ public:
 
     // 合成源专用：叠加噪声幅度，其他源忽略
     virtual void set_noise_level(int /*level*/) noexcept {}
+
+    // 暂停恢复后重新对齐节拍基准。
+    //
+    // 节拍是 start_time + n*period 的绝对时基，暂停一段时间后所有 deadline
+    // 都已经过期，恢复时会连续猛发一大堆帧去"追赶"，瞬间打满链路。
+    // 暂停结束调用本方法把基准平移到当前时刻。
+    virtual void reset_pacing() noexcept {}
 };
 
 }  // namespace lowlat

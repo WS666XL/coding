@@ -34,6 +34,7 @@ public:
     const char* name() const noexcept override { return "synthetic"; }
     std::int64_t next_frame_due_us() const noexcept override;
     void set_noise_level(int level) noexcept override { noise_level_ = level; }
+    void reset_pacing() noexcept override;
 
     // 当前已产出的帧数，供测试断言使用。
     std::uint32_t produced() const noexcept { return frame_index_; }

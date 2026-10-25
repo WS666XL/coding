@@ -222,4 +222,14 @@ bool SyntheticSource::next_frame(YuvFrame* out, std::string* error)
     return true;
 }
 
+void SyntheticSource::reset_pacing() noexcept
+{
+    if (fps_ <= 0) {
+        return;
+    }
+    const auto period = std::chrono::microseconds(1000000 / fps_);
+    start_time_ = std::chrono::steady_clock::now() -
+                  period * static_cast<std::int64_t>(frame_index_);
+}
+
 }  // namespace lowlat

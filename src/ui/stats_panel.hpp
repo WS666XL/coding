@@ -27,6 +27,10 @@ private:
     QLabel* status_{nullptr};
     QLabel* status_detail_{nullptr};
 
+    QLabel* source_{nullptr};
+    QLabel* resolution_{nullptr};
+    QLabel* bitrate_{nullptr};
+
     QLabel* fps_{nullptr};
     QLabel* shown_{nullptr};
     QLabel* dropped_{nullptr};
@@ -42,7 +46,7 @@ private:
     QLabel* rtt_{nullptr};
     QLabel* depth_{nullptr};
     QLabel* packets_{nullptr};
-    QLabel* bitrate_{nullptr};
+    QLabel* received_{nullptr};
 
     QLabel* fec_{nullptr};
     QLabel* nack_{nullptr};

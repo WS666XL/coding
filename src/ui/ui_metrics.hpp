@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace lowlat {
 
@@ -30,6 +31,13 @@ struct UiMetrics {
     double jitter_ms{0.0};
     double rtt_ms{0.0};
     int depth_ms{0};
+
+    // 输入与编码（单机模式下才有意义）
+    std::string source_label;      // 文件名或"合成源"
+    int video_width{0};
+    int video_height{0};
+    int target_bitrate_kbps{0};
+    std::uint64_t frames_sent{0};
 
     // 丢包恢复
     std::uint64_t fec_recovered{0};

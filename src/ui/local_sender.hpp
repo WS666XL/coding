@@ -48,6 +48,12 @@ public:
     bool running() const noexcept { return running_.load(std::memory_order_relaxed); }
     std::string last_error() const;
 
+    // 暂停只是停止推进帧，不拆连接：恢复后从这里继续。
+    void set_paused(bool paused) noexcept;
+    bool paused() const noexcept { return paused_.load(std::memory_order_relaxed); }
+
+    const std::string& input_path() const noexcept { return options_.input; }
+
     std::uint64_t frames_sent() const noexcept;
     int current_bitrate_kbps() const noexcept;
     int frame_width() const noexcept;
@@ -64,6 +70,7 @@ private:
     std::thread worker_;
     std::atomic<bool> stop_{false};
     std::atomic<bool> running_{false};
+    std::atomic<bool> paused_{false};
     std::atomic<std::uint64_t> frames_sent_{0};
     std::atomic<int> current_bitrate_kbps_{0};
     std::atomic<int> frame_width_{0};

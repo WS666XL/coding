@@ -34,6 +34,7 @@ public:
     const char* name() const noexcept override { return "file"; }
 
     std::int64_t next_frame_due_us() const noexcept override;
+    void reset_pacing() noexcept override;
 
     // 文件路径（日志用）
     const std::string& path() const noexcept;

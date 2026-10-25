@@ -60,6 +60,11 @@ StatsPanel::StatsPanel(QWidget* parent) : QWidget(parent)
 
     int row = 0;
 
+    add_section(grid, row++, QStringLiteral("INPUT"));
+    source_ = add_row(grid, row++, QStringLiteral("source"));
+    resolution_ = add_row(grid, row++, QStringLiteral("resolution"));
+    bitrate_ = add_row(grid, row++, QStringLiteral("target bitrate"));
+
     add_section(grid, row++, QStringLiteral("PLAYBACK"));
     fps_ = add_row(grid, row++, QStringLiteral("fps"));
     shown_ = add_row(grid, row++, QStringLiteral("shown"));
@@ -78,7 +83,7 @@ StatsPanel::StatsPanel(QWidget* parent) : QWidget(parent)
     rtt_ = add_row(grid, row++, QStringLiteral("rtt"));
     depth_ = add_row(grid, row++, QStringLiteral("buffer depth"));
     packets_ = add_row(grid, row++, QStringLiteral("packets"));
-    bitrate_ = add_row(grid, row++, QStringLiteral("received"));
+    received_ = add_row(grid, row++, QStringLiteral("received"));
 
     add_section(grid, row++, QStringLiteral("RECOVERY"));
     fec_ = add_row(grid, row++, QStringLiteral("fec repaired"));
@@ -135,7 +140,17 @@ void StatsPanel::update_metrics(const UiMetrics& metrics)
     depth_->setText(QStringLiteral("%1 ms").arg(metrics.depth_ms));
     packets_->setText(QString::number(metrics.packets));
     // 显示累计接收量而不是"瞬时码率"：后者需要额外的时间窗，容易和日志口径不一致
-    bitrate_->setText(QStringLiteral("%1 KB").arg(metrics.bytes / 1024));
+    received_->setText(QStringLiteral("%1 KB").arg(metrics.bytes / 1024));
+
+    source_->setText(metrics.source_label.empty() ? QStringLiteral("--")
+                                                  : QString::fromStdString(metrics.source_label));
+    resolution_->setText(metrics.video_width > 0
+                             ? QStringLiteral("%1x%2").arg(metrics.video_width).arg(
+                                   metrics.video_height)
+                             : QStringLiteral("--"));
+    bitrate_->setText(metrics.target_bitrate_kbps > 0
+                          ? QStringLiteral("%1 kbps").arg(metrics.target_bitrate_kbps)
+                          : QStringLiteral("--"));
 
     fec_->setText(QString::number(metrics.fec_recovered));
     nack_->setText(QString::number(metrics.nack_sent));

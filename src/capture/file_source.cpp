@@ -414,6 +414,16 @@ std::int64_t FileSource::next_frame_due_us() const noexcept
         .count();
 }
 
+void FileSource::reset_pacing() noexcept
+{
+    if (impl_ == nullptr || impl_->out_fps <= 0) {
+        return;
+    }
+    const auto period = std::chrono::microseconds(1000000 / impl_->out_fps);
+    impl_->start_time =
+        std::chrono::steady_clock::now() - period * static_cast<std::int64_t>(impl_->frame_index);
+}
+
 const std::string& FileSource::path() const noexcept
 {
     return impl_->path;

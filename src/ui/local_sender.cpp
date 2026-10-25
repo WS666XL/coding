@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -116,6 +117,15 @@ bool LocalSender::start(const Options& options, std::string* error)
     return true;
 }
 
+void LocalSender::set_paused(bool paused) noexcept
+{
+    const bool was = paused_.exchange(paused, std::memory_order_relaxed);
+    if (was && !paused && source_) {
+        // 恢复时把节拍基准拉回当前时刻，否则会为"补上"暂停期间的帧而猛发一波
+        source_->reset_pacing();
+    }
+}
+
 void LocalSender::stop()
 {
     if (!running_.load(std::memory_order_relaxed) && !worker_.joinable()) {
@@ -142,6 +152,11 @@ void LocalSender::run()
     const int fps = source_->fps() > 0 ? source_->fps() : 30;
 
     while (!stop_.load(std::memory_order_relaxed)) {
+        if (paused_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+
         std::string error;
 
         YuvFrame frame;

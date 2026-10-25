@@ -72,12 +72,10 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
         }
     }
 
+    // 不给参数时打开空窗口，由界面里的"打开文件"按钮或拖拽决定播什么。
+    // 这是默认入口：用户不该被命令行参数拦住。
     const int modes = (!options->input.empty() ? 1 : 0) + (!options->bind.empty() ? 1 : 0) +
                       (!options->local.empty() ? 1 : 0);
-    if (modes == 0) {
-        *error = "必须指定 --local（单机播放文件）、--input（离线校验）或 --bind（接收远端）";
-        return false;
-    }
     if (modes > 1) {
         *error = "--local / --input / --bind 三者只能选一个";
         return false;
