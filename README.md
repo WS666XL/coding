@@ -41,14 +41,23 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 | 模块 | 行数 | 职责 |
 |---|---|---|
 | `common` | 809 | 无锁 SPSC 环形队列、帧池、字节序、统计、日志 |
-| `capture` | 1346 | 采集抽象、合成源（彩条+帧号+噪声）、V4L2 MMAP 采集、文件源（任意媒体文件解码） |
+| `capture` | 1375 | 采集抽象、合成源（彩条+帧号+噪声）、V4L2 MMAP 采集、文件源（任意媒体文件解码） |
 | `codec` | 683 | libx264 编码、libavcodec 解码 |
 | `protocol` | 1694 | RTP-lite 头、FU-A 分片重组、XOR FEC、NACK 调度、抖动估计、RTT 估计、带宽估计、控制通道 |
-| `transport` | 1698 | UDP socket、发送器、接收流水线、重传缓存 |
+| `transport` | 1816 | UDP socket、发送器、接收流水线、重传缓存 |
 | `app` | 1057 | `lowlat_sender` / `lowlat_receiver` 命令行程序 |
-| `ui` | 1838 | Qt6 界面、GL 渲染、指标面板、收包线程、进程内发送端 |
+| `ui` | 2337 | Qt6 界面、GL 渲染、指标面板、收包线程、进程内发送端 |
 
-源码合计约 9125 行，含测试与工具约 13600 行。
+源码合计约 9771 行，含测试与工具约 14531 行。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [docs/protocol.md](docs/protocol.md) | 协议规范：RTP-lite 头字段逐字节布局、FU-A 分片、XOR FEC 载荷、反向控制通道、收发时序 |
+| [docs/benchmark.md](docs/benchmark.md) | 四组压测：丢包档位扫描、抖动缓冲深度、端到端延迟构成、拥塞控制 |
+| [docs/bench-raw.csv](docs/bench-raw.csv) | 36 次压测的原始数据（文档表格的来源，可复算） |
+| [docs/interview.md](docs/interview.md) | 面试问答：常见追问、实测数据支撑、以及明确不该说什么 |
 
 ## 构建
 
