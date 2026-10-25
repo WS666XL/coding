@@ -158,7 +158,9 @@ setarch "$(uname -m)" -R ./build-tsan/tests/lowlat_tests --gtest_filter='SpscRin
 
 ## 已知限制
 
-1. **V4L2 采集未在真实设备验证**。代码完整（`REQBUFS`/`QBUF`/`DQBUF` + mmap 零拷贝），但开发机是 WSL2，内核无对应头文件、`v4l2loopback` 无法编译，`/dev/video*` 不存在。这部分只经过编译与错误路径测试。**替代方案是文件源**（`--source file` / `--local`），可以直接播放任意视频文件验证整条链路。
+1. **V4L2 采集未在真实设备跑通**。代码完整：8 个 ioctl 全实现（`QUERYCAP`/`S_FMT`/`REQBUFS`/`QUERYBUF`/`QBUF`/`DQBUF`/`STREAMON`/`STREAMOFF`），采集走 mmap 零拷贝。格式协商支持 **YUV420 / YUYV / MJPEG** 三种（UVC 摄像头实测只提供后两种），非 YUV420 通过 `V4l2Converter` 转成 I420，转换逻辑有 11 个单元测试。
+   但**实机始终没跑通**：开发机是 WSL2，只能靠 `usbipd` 透传摄像头。透传本身成功（`uvcvideo` 正确绑定 UVC 1.50），只成功取到过一次帧且只有 5 fps；MJPG 大帧在 USB/IP 下 0 帧；一次 `kill -9` 把等时连接打成 `ECONNRESET` 后再也无法恢复。结论是 **USB/IP 不适合传视频**，需要原生 Linux 或设备打通的机器才能验证。
+   **替代方案是文件源**（`--source file` / `--local`），可以播放任意视频文件验证整条链路，且链路本身完全一致。
 2. **渲染走软件光栅化**（llvmpipe），无硬件 GPU 加速。720p 全屏清屏实测 4.76ms/帧，30fps 预算占用 14%。
 3. **色彩矩阵固定 BT.601 有限范围**，未从 SPS VUI 读取。接外部视频源时颜色会偏。
 4. **拥塞控制只验证了 loopback 限速**，没有真实跨机链路数据。收敛偏保守：1.2 Mbit 链路上稳定在 800–880 kbps（约容量的 70%）。

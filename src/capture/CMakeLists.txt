@@ -5,6 +5,7 @@ pkg_check_modules(AVMEDIA REQUIRED IMPORTED_TARGET libavformat libavcodec libavu
 add_library(lowlat_capture STATIC
     synthetic_source.cpp
     v4l2_source.cpp
+    v4l2_converter.cpp
     file_source.cpp
     capture_factory.cpp
 )

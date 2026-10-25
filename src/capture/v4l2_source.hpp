@@ -4,7 +4,10 @@
 #include <memory>
 #include <string>
 
+#include "common/frame_pool.hpp"
+
 #include "capture/capture_source.hpp"
+#include "capture/v4l2_converter.hpp"
 
 namespace lowlat {
 
@@ -42,7 +45,8 @@ public:
     const char* name() const noexcept override { return "v4l2"; }
 
     const std::string& device() const noexcept { return device_; }
-    const char* pixel_format_name() const noexcept { return "YUV420"; }
+    // 实际协商到的格式名（YUV420 / YUYV / MJPG）
+    const char* pixel_format_name() const noexcept { return converter_.format_name(); }
     std::uint32_t buffer_count() const noexcept { return buffer_count_; }
 
     // 归还缓冲区失败的累计次数，用于判断驱动是否异常。
@@ -59,6 +63,9 @@ private:
     std::uint32_t buffer_count_;
     int actual_width_{0};
     int actual_height_{0};
+    // 格式协商结果。YUV420 且 stride==width 时走零拷贝，其余格式需要转换拷贝。
+    V4l2Converter converter_;
+    std::shared_ptr<FramePool> pool_;
     std::uint32_t frame_index_{0};
     bool streaming_{false};
 };

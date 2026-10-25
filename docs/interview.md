@@ -334,7 +334,7 @@ AutoGeneratesDistinctSsrcPerInstance: Failure
 
 | 不足 | 具体到什么程度 |
 |---|---|
-| **V4L2 没实机验证** | 8 个 ioctl 全实现了（QUERYCAP/S_FMT/REQBUFS/QUERYBUF/QBUF/DQBUF/STREAMON/OFF），但 WSL2 没有 `/dev/video*`，只做了编译与错误路径验证。**且只接受 YUV420，真实摄像头多是 YUYV/NV12，接上去会协商失败** |
+| **V4L2 没在实机跑通** | 8 个 ioctl 全实现，格式协商支持 YUV420/YUYV/MJPEG（真实 UVC 只给后两种），转换逻辑有 11 个单测。但实机卡在环境：WSL2 只能走 `usbipd` 透传，透传成功、`uvcvideo` 绑定成功，却只取到过一次 5fps 的帧；MJPG 大帧 0 帧；一次 `kill -9` 打成 `ECONNRESET` 后再也恢复不了。**结论是 USB/IP 不适合传视频** |
 | **没有音频** | 纯视频 |
 | **没有加密** | 明文 UDP |
 | **只支持单流** | SSRC 只用于换流检测，不做流复用 |

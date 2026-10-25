@@ -29,6 +29,7 @@ add_executable(lowlat_tests
     test_control_message.cpp
     test_file_source.cpp
     test_local_sender.cpp
+    test_v4l2_converter.cpp
 )
 
 # LocalSender 只依赖 capture/codec/transport，没有 Qt 依赖，

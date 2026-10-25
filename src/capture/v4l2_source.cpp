@@ -133,22 +133,40 @@ bool V4l2Source::start(std::string* error)
         return false;
     }
 
-    v4l2_format format{};
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.width = static_cast<std::uint32_t>(requested_width_);
-    format.fmt.pix.height = static_cast<std::uint32_t>(requested_height_);
-    format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUV420;
-    format.fmt.pix.field = V4L2_FIELD_NONE;
-    if (xioctl(device->fd, VIDIOC_S_FMT, &format) != 0) {
-        if (error != nullptr) {
-            *error = with_errno("VIDIOC_S_FMT 失败");
-        }
-        return false;
-    }
+    // 格式协商：按优先级逐个尝试，接受驱动实际返回的格式。
+    //
+    // 实测（一台常见的笔记本内置摄像头，Bison 5986:118a）只提供 MJPG 与 YUYV，
+    // 没有 YUV420。原先只请求 YUV420，导致 VIDIOC_S_FMT 直接失败——
+    // 代码写完了却接不上任何真实摄像头。
+    static const std::uint32_t kCandidates[] = {
+        V4L2_PIX_FMT_YUV420,  // 最优先：可与 mmap 缓冲零拷贝
+        V4L2_PIX_FMT_YUYV,    // 未压缩 4:2:2，UVC 最常见的格式
+        V4L2_PIX_FMT_MJPEG,   // 压缩，带宽占用最小（USB/IP 下几乎是唯一可行选项）
+    };
 
-    if (format.fmt.pix.pixelformat != V4L2_PIX_FMT_YUV420) {
+    v4l2_format format{};
+    bool negotiated = false;
+    std::uint32_t chosen_format = 0;
+    for (std::uint32_t candidate : kCandidates) {
+        format = v4l2_format{};
+        format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        format.fmt.pix.width = static_cast<std::uint32_t>(requested_width_);
+        format.fmt.pix.height = static_cast<std::uint32_t>(requested_height_);
+        format.fmt.pix.pixelformat = candidate;
+        format.fmt.pix.field = V4L2_FIELD_NONE;
+        if (xioctl(device->fd, VIDIOC_S_FMT, &format) != 0) {
+            continue;
+        }
+        // 驱动可能悄悄换成别的格式，只接受完全匹配的结果
+        if (format.fmt.pix.pixelformat == candidate) {
+            negotiated = true;
+            chosen_format = candidate;
+            break;
+        }
+    }
+    if (!negotiated) {
         if (error != nullptr) {
-            *error = "设备不支持 YUV420（YU12）输出";
+            *error = "设备不支持任何可用像素格式（已尝试 YUV420 / YUYV / MJPG）";
         }
         return false;
     }
@@ -156,22 +174,27 @@ bool V4l2Source::start(std::string* error)
     const int actual_width = static_cast<int>(format.fmt.pix.width);
     const int actual_height = static_cast<int>(format.fmt.pix.height);
     const std::size_t stride = format.fmt.pix.bytesperline;
-    const std::size_t needed =
-        static_cast<std::size_t>(actual_width) * static_cast<std::size_t>(actual_height) * 3u / 2u;
 
-    if (stride != static_cast<std::size_t>(actual_width)) {
+    if (!converter_.configure(chosen_format, actual_width, actual_height, stride, error)) {
+        return false;
+    }
+    if (format.fmt.pix.sizeimage == 0) {
         if (error != nullptr) {
-            *error = "驱动返回的行跨度为 " + std::to_string(stride) + "，与宽度 " +
-                     std::to_string(actual_width) + " 不一致；当前实现要求紧凑布局";
+            *error = "驱动返回的缓冲区大小为 0";
         }
         return false;
     }
-    if (format.fmt.pix.sizeimage < needed) {
-        if (error != nullptr) {
-            *error = "缓冲区大小 " + std::to_string(format.fmt.pix.sizeimage) +
-                     " 小于 YUV420 所需 " + std::to_string(needed);
+
+    // 非 YUV420 格式需要转换成 I420，不能把驱动缓冲直接交给上层，
+    // 因此额外准备一个帧池；YUV420 仍走零拷贝路径，不分配。
+    if (!converter_.is_passthrough()) {
+        pool_ = FramePool::create(converter_.output_size(), buffer_count_ + 2);
+        if (!pool_) {
+            if (error != nullptr) {
+                *error = "为格式转换创建帧池失败";
+            }
+            return false;
         }
-        return false;
     }
 
     v4l2_requestbuffers request{};
@@ -331,25 +354,51 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
         capture_ts_us = steady_now_us();
     }
 
-    auto* start = static_cast<std::uint8_t*>(device_handle_->buffers[buffer.index]);
+    auto* raw = static_cast<std::uint8_t*>(device_handle_->buffers[buffer.index]);
     const std::uint32_t index = buffer.index;
     std::shared_ptr<Device> owner = device_handle_;
 
-    // deleter 捕获 owner 与索引：最后一个引用释放时把缓冲区还回驱动。
-    auto holder = std::shared_ptr<std::uint8_t>(
-        start, [owner, index](std::uint8_t* /*unused*/) noexcept {
-            if (!owner->alive.load(std::memory_order_acquire)) {
-                return;
+    auto requeue = [owner, index]() noexcept {
+        if (!owner->alive.load(std::memory_order_acquire)) {
+            return;
+        }
+        v4l2_buffer again{};
+        again.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        again.memory = V4L2_MEMORY_MMAP;
+        again.index = index;
+        std::lock_guard<std::mutex> lock(owner->mutex);
+        if (xioctl(owner->fd, VIDIOC_QBUF, &again) != 0) {
+            owner->requeue_failures.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    if (!converter_.is_passthrough()) {
+        // 需要格式转换：拷进帧池后立刻把驱动缓冲还回去，
+        // 否则转换期间该缓冲一直被占用，可用槽位会越来越少。
+        auto converted = pool_->acquire();
+        if (!converted) {
+            requeue();
+            if (error != nullptr) {
+                *error = "转换帧池耗尽";
             }
-            v4l2_buffer requeue{};
-            requeue.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            requeue.memory = V4L2_MEMORY_MMAP;
-            requeue.index = index;
-            std::lock_guard<std::mutex> lock(owner->mutex);
-            if (xioctl(owner->fd, VIDIOC_QBUF, &requeue) != 0) {
-                owner->requeue_failures.fetch_add(1, std::memory_order_relaxed);
-            }
-        });
+            return false;
+        }
+        if (!converter_.convert(raw, buffer.bytesused, converted.get(), error)) {
+            requeue();
+            return false;
+        }
+        requeue();
+
+        *out = YuvFrame(frame_index_, capture_ts_us, actual_width_, actual_height_,
+                        std::move(converted));
+        ++frame_index_;
+        return true;
+    }
+
+    // YUV420 紧凑布局：直接把 mmap 区包装成帧，最后一个引用释放时还回驱动。
+    auto holder = std::shared_ptr<std::uint8_t>(raw, [requeue](std::uint8_t* /*unused*/) noexcept {
+        requeue();
+    });
 
     *out = YuvFrame(frame_index_, capture_ts_us, actual_width_, actual_height_, std::move(holder));
     ++frame_index_;
