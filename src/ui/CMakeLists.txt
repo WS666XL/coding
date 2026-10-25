@@ -14,6 +14,7 @@ add_executable(lowlat_ui
     receiver_thread.cpp
     local_sender.cpp
     stats_panel.cpp
+    metrics_chart.cpp
 )
 
 target_include_directories(lowlat_ui PRIVATE "${PROJECT_SOURCE_DIR}/src")

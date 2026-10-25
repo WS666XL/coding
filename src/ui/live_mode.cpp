@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDebug>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -12,6 +13,7 @@
 #include <QMainWindow>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <algorithm>
@@ -24,6 +26,7 @@
 #include "common/stats.hpp"
 #include "transport/udp_socket.hpp"
 #include "ui/local_sender.hpp"
+#include "ui/metrics_chart.hpp"
 #include "ui/receiver_thread.hpp"
 #include "ui/stats_panel.hpp"
 #include "ui/video_widget.hpp"
@@ -111,14 +114,24 @@ int run_live_mode(const AppOptions& options)
     // ---------------------------------------------------------------- 界面
     QMainWindow window;
     auto* central = new QWidget(&window);
-    auto* layout = new QHBoxLayout(central);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    auto* root_layout = new QVBoxLayout(central);
+    root_layout->setContentsMargins(0, 0, 0, 0);
+    root_layout->setSpacing(0);
+
+    auto* top_row = new QHBoxLayout();
+    top_row->setContentsMargins(0, 0, 0, 0);
+    top_row->setSpacing(0);
 
     auto* video = new VideoWidget(central);
     auto* panel = new StatsPanel(central);
-    layout->addWidget(video, 1);
-    layout->addWidget(panel, 0);
+    top_row->addWidget(video, 1);
+    top_row->addWidget(panel, 0);
+
+    // 底部实时曲线：把"看不见的过程"画出来
+    auto* chart = new MetricsChart(central);
+    root_layout->addLayout(top_row, 1);
+    root_layout->addWidget(chart, 0);
+
     window.setCentralWidget(central);
     window.resize(1600, 760);
 
@@ -211,13 +224,18 @@ int run_live_mode(const AppOptions& options)
         return true;
     };
 
+    // 记住上次打开的位置：WSL 下大家常用 /mnt/c/... 里的 Windows 文件，
+    // 每次都从用户主目录点进去太麻烦。
+    QString last_directory;
     QObject::connect(open_action, &QAction::triggered, video, [&]() {
+        const QString start_dir =
+            last_directory.isEmpty() ? QDir::homePath() : last_directory;
         const QString path = QFileDialog::getOpenFileName(
-            &window, QStringLiteral("Choose a video file"), QString(),
-            video_filter());
+            &window, QStringLiteral("Choose a video file"), start_dir, video_filter());
         if (path.isEmpty()) {
             return;
         }
+        last_directory = QFileInfo(path).absolutePath();
         start_file(path.toStdString());
     });
 
@@ -290,6 +308,19 @@ int run_live_mode(const AppOptions& options)
         ++frames_shown;
     });
     render_timer->start();
+
+    // 曲线采样：500ms 一个点。比面板的 1s 快，切换丢包档位时形变更明显。
+    auto* chart_timer = new QTimer(&window);
+    chart_timer->setInterval(500);
+    QObject::connect(chart_timer, &QTimer::timeout, video, [&]() {
+        if (frames_shown == 0) {
+            return;
+        }
+        const StatsSnapshot snapshot = e2e_stats.peek();
+        chart->push_sample(snapshot.latency_p99_ms,
+                           local_sender ? local_sender->current_bitrate_kbps() : 0);
+    });
+    chart_timer->start();
 
     // ---------------------------------------------------------------- 报告
     auto* stats_timer = new QTimer(&window);
@@ -420,6 +451,7 @@ int run_live_mode(const AppOptions& options)
 
     render_timer->stop();
     stats_timer->stop();
+    chart_timer->stop();
     if (local_sender) {
         local_sender->stop();
     }
