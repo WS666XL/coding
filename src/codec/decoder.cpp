@@ -3,7 +3,7 @@
 #include <cstring>
 #include <utility>
 
-#include "codec/ffmpeg_headers.hpp"
+#include "common/ffmpeg_headers.hpp"
 
 namespace lowlat {
 namespace {

@@ -9,11 +9,12 @@ void print_ui_usage()
 {
     std::fprintf(stderr,
                  "用法:\n"
-                 "  离线校验: lowlat_ui --input <h264> [--frame N] [--dump out.png]\n"
-                 "  实时播放: lowlat_ui --bind <addr:port> [--nack] [--adaptive]\n"
-                 "            [--duration sec] [--dump prefix]\n"
+                 "  单机播放文件: lowlat_ui --local <媒体文件>     （推荐，一个窗口跑完整链路）\n"
+                 "  接收远端:     lowlat_ui --bind <addr:port> [--nack] [--adaptive]\n"
+                 "  离线校验:     lowlat_ui --input <h264> [--frame N] [--dump out.png]\n"
                  "  --wait-ms <int>   首帧渲染前的等待，默认 800\n"
-                 "  --hold <ms>       帧保持窗口，默认 60\n");
+                 "  --hold <ms>       帧保持窗口，默认 60\n"
+                 "  --bitrate <kbps>  单机模式的编码码率，默认 2000\n");
 }
 
 bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* error)
@@ -45,6 +46,8 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
             if (!next_string(&options->input)) return false;
         } else if (key == "--bind") {
             if (!next_string(&options->bind)) return false;
+        } else if (key == "--local") {
+            if (!next_string(&options->local)) return false;
         } else if (key == "--frame") {
             if (!next_int(&options->frame)) return false;
         } else if (key == "--dump") {
@@ -55,6 +58,8 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
             if (!next_int(&options->duration_sec)) return false;
         } else if (key == "--hold") {
             if (!next_int(&options->hold_ms)) return false;
+        } else if (key == "--bitrate") {
+            if (!next_int(&options->bitrate_kbps)) return false;
         } else if (key == "--nack") {
             options->nack = true;
         } else if (key == "--feedback") {
@@ -67,12 +72,14 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
         }
     }
 
-    if (options->input.empty() && options->bind.empty()) {
-        *error = "必须指定 --input 或 --bind";
+    const int modes = (!options->input.empty() ? 1 : 0) + (!options->bind.empty() ? 1 : 0) +
+                      (!options->local.empty() ? 1 : 0);
+    if (modes == 0) {
+        *error = "必须指定 --local（单机播放文件）、--input（离线校验）或 --bind（接收远端）";
         return false;
     }
-    if (!options->input.empty() && !options->bind.empty()) {
-        *error = "--input 与 --bind 不能同时使用";
+    if (modes > 1) {
+        *error = "--local / --input / --bind 三者只能选一个";
         return false;
     }
     if (options->frame < 0 || options->wait_ms < 0 || options->duration_sec < 0) {

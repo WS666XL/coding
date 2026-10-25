@@ -9,6 +9,7 @@ namespace lowlat {
 struct AppOptions {
     std::string input;   // 离线模式：Annex-B 文件
     std::string bind;    // 实时模式：监听地址
+    std::string local;   // 单进程模式：要播放的媒体文件（内部起发送端）
     int frame{0};
     std::string dump;    // 离线：截帧路径；实时：截图前缀
     int wait_ms{800};
@@ -17,6 +18,7 @@ struct AppOptions {
     bool adaptive{false};
     bool feedback{false};
     int hold_ms{60};
+    int bitrate_kbps{2000};  // 单进程模式下的目标码率
 };
 
 void print_ui_usage();

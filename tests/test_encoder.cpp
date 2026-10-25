@@ -3,7 +3,7 @@
 
 #include "capture/synthetic_source.hpp"
 #include "codec/encoder.hpp"
-#include "codec/ffmpeg_headers.hpp"
+#include "common/ffmpeg_headers.hpp"
 
 #include <gtest/gtest.h>
 

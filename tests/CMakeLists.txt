@@ -27,6 +27,7 @@ add_executable(lowlat_tests
     test_frame_slot.cpp
     test_bandwidth_estimator.cpp
     test_control_message.cpp
+    test_file_source.cpp
 )
 
 target_link_libraries(lowlat_tests

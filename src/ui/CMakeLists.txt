@@ -12,6 +12,7 @@ add_executable(lowlat_ui
     live_mode.cpp
     video_widget.cpp
     receiver_thread.cpp
+    local_sender.cpp
     stats_panel.cpp
 )
 

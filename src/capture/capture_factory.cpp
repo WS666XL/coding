@@ -1,5 +1,6 @@
 #include "capture/capture_factory.hpp"
 
+#include "capture/file_source.hpp"
 #include "capture/synthetic_source.hpp"
 #include "capture/v4l2_source.hpp"
 
@@ -16,9 +17,19 @@ std::unique_ptr<CaptureSource> create_capture_source(const CaptureOptions& optio
         return std::make_unique<V4l2Source>(options.device, options.width, options.height,
                                             options.fps, options.buffer_count);
     }
+    if (options.source == "file") {
+        if (options.input.empty()) {
+            if (error != nullptr) {
+                *error = "source=file 时必须指定 --input <媒体文件>";
+            }
+            return nullptr;
+        }
+        return std::make_unique<FileSource>(options.input, options.fps, options.loop,
+                                            options.realtime);
+    }
 
     if (error != nullptr) {
-        *error = "未知采集源: " + options.source + "（可选 synthetic / v4l2）";
+        *error = "未知采集源: " + options.source + "（可选 synthetic / v4l2 / file）";
     }
     return nullptr;
 }

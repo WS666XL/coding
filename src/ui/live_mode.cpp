@@ -15,6 +15,7 @@
 #include "common/log.hpp"
 #include "common/stats.hpp"
 #include "transport/udp_socket.hpp"
+#include "ui/local_sender.hpp"
 #include "ui/receiver_thread.hpp"
 #include "ui/stats_panel.hpp"
 #include "ui/video_widget.hpp"
@@ -48,8 +49,16 @@ YuvPlanes to_planes(const H264Decoder::Frame& frame)
 int run_live_mode(const AppOptions& options)
 {
     std::string error;
+
+    // 单机模式：自己发给自己。接收端绑定临时端口，发送端再把目标指向这个端口，
+    // 这样不用写死端口号，也不会和系统里其他进程冲突。
+    const bool local_mode = !options.local.empty();
+
     UdpEndpoint bind_endpoint;
-    if (!parse_endpoint(options.bind, &bind_endpoint, &error)) {
+    if (local_mode) {
+        bind_endpoint.address = "127.0.0.1";
+        bind_endpoint.port = 0;
+    } else if (!parse_endpoint(options.bind, &bind_endpoint, &error)) {
         std::fprintf(stderr, "监听地址错误: %s\n", error.c_str());
         return 1;
     }
@@ -75,6 +84,30 @@ int run_live_mode(const AppOptions& options)
                       << "nack=" << (options.nack ? "on" : "off")
                       << "adaptive=" << (options.adaptive ? "on" : "off")
                       << "hold=" << options.hold_ms << "ms";
+
+    // 单机模式：在同一个进程里起发送端，指向刚绑定的端口
+    std::unique_ptr<LocalSender> local_sender;
+    if (local_mode) {
+        LocalSender::Options sender_options;
+        sender_options.input = options.local;
+        sender_options.destination_address = "127.0.0.1";
+        sender_options.destination_port = worker.local_port();
+        sender_options.bitrate_kbps = options.bitrate_kbps;
+        sender_options.loop = true;
+        sender_options.fec = true;
+        sender_options.congestion_control = true;
+
+        local_sender = std::make_unique<LocalSender>();
+        if (!local_sender->start(sender_options, &error)) {
+            qCritical().noquote() << "[ui] 本机发送端启动失败:" << error.c_str();
+            worker.stop();
+            return 2;
+        }
+        qInfo().noquote() << "[ui] 本机播放" << options.local.c_str()
+                          << "尺寸=" << local_sender->frame_width() << "x"
+                          << local_sender->frame_height()
+                          << "码率=" << sender_options.bitrate_kbps << "kbps";
+    }
 
     QMainWindow window;
     auto* central = new QWidget(&window);
@@ -242,6 +275,9 @@ int run_live_mode(const AppOptions& options)
 
     render_timer->stop();
     stats_timer->stop();
+    if (local_sender) {
+        local_sender->stop();
+    }
     worker.stop();
 
     const StatsSnapshot e2e = e2e_stats.peek();

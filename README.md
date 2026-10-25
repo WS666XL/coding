@@ -40,15 +40,15 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 
 | 模块 | 行数 | 职责 |
 |---|---|---|
-| `common` | 792 | 无锁 SPSC 环形队列、帧池、字节序、统计、日志 |
-| `capture` | 823 | 采集抽象、合成源（彩条+帧号）、V4L2 MMAP 采集 |
-| `codec` | 701 | libx264 编码、libavcodec 解码 |
-| `protocol` | 1237 | RTP-lite 头、FU-A 分片重组、XOR FEC、NACK 调度、抖动估计、RTT 估计 |
-| `transport` | 1533 | UDP socket、发送器、接收流水线、重传缓存 |
-| `app` | 975 | `lowlat_sender` / `lowlat_receiver` 命令行程序 |
-| `ui` | 1484 | Qt6 界面、GL 渲染、指标面板、收包线程 |
+| `common` | 809 | 无锁 SPSC 环形队列、帧池、字节序、统计、日志 |
+| `capture` | 1346 | 采集抽象、合成源（彩条+帧号+噪声）、V4L2 MMAP 采集、文件源（任意媒体文件解码） |
+| `codec` | 683 | libx264 编码、libavcodec 解码 |
+| `protocol` | 1694 | RTP-lite 头、FU-A 分片重组、XOR FEC、NACK 调度、抖动估计、RTT 估计、带宽估计、控制通道 |
+| `transport` | 1698 | UDP socket、发送器、接收流水线、重传缓存 |
+| `app` | 1057 | `lowlat_sender` / `lowlat_receiver` 命令行程序 |
+| `ui` | 1838 | Qt6 界面、GL 渲染、指标面板、收包线程、进程内发送端 |
 
-源码合计约 7500 行，含测试与工具约 11300 行。
+源码合计约 9125 行，含测试与工具约 13600 行。
 
 ## 构建
 
@@ -79,6 +79,9 @@ sudo systemctl status lowlat-receiver
 ## 运行
 
 ```bash
+# 0) 单机播放任意视频文件：一个进程跑完整链路（推荐先试这个）
+./build/src/ui/lowlat_ui --local 你的视频.mp4
+
 # 1) 命令行落盘：发送 300 帧并接收保存
 ./build/src/app/lowlat_receiver --bind 127.0.0.1:5000 --output out/recv.h264 \
     --frames 300 --nack &
@@ -86,6 +89,10 @@ sudo systemctl status lowlat-receiver
 
 # 2) 图形界面实时播放
 ./build/src/ui/lowlat_ui --bind 127.0.0.1:5000 --nack
+
+# 2b) 播放本地文件（把文件当"摄像头"推流）
+./build/src/app/lowlat_sender --source file --input 你的视频.mp4 --loop \
+    --dest 127.0.0.1:5000 --fec
 
 # 3) 弱网压测（自动创建独立 netns，扫描丢包档位）
 ./scripts/bench.sh
@@ -111,6 +118,8 @@ LEVELS="0 5" REPS=1 FRAMES=150 ./scripts/bench.sh   # 快速验证
 
 **UI 只保留最新帧**。解码快于渲染时覆盖旧帧而非排队——排队会让延迟单调增长且不可恢复。
 
+**单进程模式把发送端放进 UI 进程**。`--local` 时文件源 → 编码 → UDP(127.0.0.1) → 收包 → 解码 → 渲染全部在一个进程里完成。链路绕了一圈回到原处，但中间的 UDP 与协议栈是真的，所以指标不是模拟出来的。这样做是为了让"开一个窗口就能看到效果"成立——原来要开两个终端，对使用者不成立。
+
 **拥塞控制基于延迟梯度而非丢包**。接收端每帧记录 `(采集时刻, 到达时刻)`，每 8 帧或 300ms 回传一批样本；发送端用 `Σ[(到达间隔) - (发送间隔)]` 判断队列是否在堆积，过载时乘性降速、正常时加性提速。只看丢包的话，等到丢包发生时队列已经堆满了。
 
 **降速带冷却、严重度过冲限两步**。实测两个必要的补丁：大过冲后队列要几秒才排空，期间检测器仍看到正值延迟会连续下调到底；一次砍太多也会远离真实工作点（1.2Mbit 链路曾被砍到 300kbps 下限）。
@@ -126,7 +135,7 @@ setarch "$(uname -m)" -R ./build-tsan/tests/lowlat_tests --gtest_filter='SpscRin
 
 ## 已知限制
 
-1. **V4L2 采集未在真实设备验证**。代码完整（`REQBUFS`/`QBUF`/`DQBUF` + mmap 零拷贝），但开发机是 WSL2，内核无对应头文件、`v4l2loopback` 无法编译，`/dev/video*` 不存在。这部分只经过编译与错误路径测试。
+1. **V4L2 采集未在真实设备验证**。代码完整（`REQBUFS`/`QBUF`/`DQBUF` + mmap 零拷贝），但开发机是 WSL2，内核无对应头文件、`v4l2loopback` 无法编译，`/dev/video*` 不存在。这部分只经过编译与错误路径测试。**替代方案是文件源**（`--source file` / `--local`），可以直接播放任意视频文件验证整条链路。
 2. **渲染走软件光栅化**（llvmpipe），无硬件 GPU 加速。720p 全屏清屏实测 4.76ms/帧，30fps 预算占用 14%。
 3. **色彩矩阵固定 BT.601 有限范围**，未从 SPS VUI 读取。接外部视频源时颜色会偏。
 4. **拥塞控制只验证了 loopback 限速**，没有真实跨机链路数据。收敛偏保守：1.2 Mbit 链路上稳定在 800–880 kbps（约容量的 70%）。

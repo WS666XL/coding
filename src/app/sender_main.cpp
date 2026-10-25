@@ -43,6 +43,9 @@ extern "C" void on_signal(int /*signum*/)
 struct Options {
     std::string source{"synthetic"};
     std::string device{"/dev/video0"};
+    std::string input;       // source=file 时的媒体文件
+    bool loop{false};        // 文件源循环播放
+    bool fps_explicit{false};
     int width{1280};
     int height{720};
     int fps{30};
@@ -67,8 +70,10 @@ void print_usage()
 {
     std::fprintf(stderr,
                  "用法: lowlat_sender [选项]\n"
-                 "  --source <synthetic|v4l2>  采集源，默认 synthetic\n"
+                 "  --source <synthetic|v4l2|file>  采集源，默认 synthetic\n"
                  "  --device <path>            V4L2 设备节点，默认 /dev/video0\n"
+                 "  --input <path>             文件源要播放的媒体文件（mp4/mkv/avi...）\n"
+                 "  --loop                     文件源播完循环\n"
                  "  --width <int>              宽度，默认 1280\n"
                  "  --height <int>             高度，默认 720\n"
                  "  --fps <int>                帧率，默认 30\n"
@@ -135,12 +140,17 @@ bool parse_args(int argc, char** argv, Options* opt, std::string* error)
             if (!take_value("--source", &opt->source)) return false;
         } else if (key == "--device") {
             if (!take_value("--device", &opt->device)) return false;
+        } else if (key == "--input") {
+            if (!take_value("--input", &opt->input)) return false;
+        } else if (key == "--loop") {
+            opt->loop = true;
         } else if (key == "--width") {
             if (!take_int("--width", &opt->width)) return false;
         } else if (key == "--height") {
             if (!take_int("--height", &opt->height)) return false;
         } else if (key == "--fps") {
             if (!take_int("--fps", &opt->fps)) return false;
+            opt->fps_explicit = true;
         } else if (key == "--bitrate") {
             if (!take_int("--bitrate", &opt->bitrate_kbps)) return false;
         } else if (key == "--frames") {
@@ -269,7 +279,10 @@ int main(int argc, char** argv)
     capture_options.device = opt.device;
     capture_options.width = opt.width;
     capture_options.height = opt.height;
-    capture_options.fps = opt.fps;
+    // 文件源默认沿用文件自身帧率；显式给了 --fps 才覆盖
+    capture_options.fps = (opt.source == "file" && !opt.fps_explicit) ? 0 : opt.fps;
+    capture_options.input = opt.input;
+    capture_options.loop = opt.loop;
     capture_options.realtime = opt.realtime;
 
     std::string create_error;
@@ -284,8 +297,11 @@ int main(int argc, char** argv)
         LOWLAT_LOG_ERROR("采集源启动失败: {}", error);
         return 2;
     }
-    LOWLAT_LOG_INFO("采集源={} 请求={}x{}@{}fps 实际={}x{}", source->name(), opt.width,
-                    opt.height, opt.fps, source->width(), source->height());
+    LOWLAT_LOG_INFO("采集源={} 请求={}x{}@{}fps 实际={}x{}@{}fps", source->name(), opt.width,
+                    opt.height, opt.fps, source->width(), source->height(), source->fps());
+    if (opt.source == "file") {
+        LOWLAT_LOG_INFO("文件={} 循环={}", opt.input, opt.loop ? "on" : "off");
+    }
     if (opt.source == "v4l2") {
         LOWLAT_LOG_INFO("V4L2 设备={}", opt.device);
     }
@@ -296,9 +312,14 @@ int main(int argc, char** argv)
 
     lowlat::H264Encoder encoder;
     lowlat::H264Encoder::Config encoder_config;
-    encoder_config.width = opt.width;
-    encoder_config.height = opt.height;
-    encoder_config.fps = opt.fps;
+    // 编码参数必须跟采集源的实际输出一致：文件源的分辨率由文件决定，
+    // 用命令行传入的默认 1280x720 会导致编码器与帧数据尺寸不匹配。
+    const int stream_width = source->width();
+    const int stream_height = source->height();
+    const int stream_fps = source->fps();
+    encoder_config.width = stream_width;
+    encoder_config.height = stream_height;
+    encoder_config.fps = stream_fps;
     encoder_config.bitrate_kbps = opt.bitrate_kbps;
     encoder_config.keyint_sec = opt.keyint_sec;
 
@@ -387,7 +408,7 @@ int main(int argc, char** argv)
 
             // 90kHz 时钟：ts = frame_index * 90000 / fps
             const std::uint64_t scaled = static_cast<std::uint64_t>(frame_index) * 90000ull /
-                                         static_cast<std::uint64_t>(opt.fps);
+                                         static_cast<std::uint64_t>(stream_fps);
             const std::uint64_t before_bytes = sender->bytes_sent();
             const std::uint64_t before_packets = sender->packets_sent();
 

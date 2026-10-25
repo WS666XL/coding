@@ -3,7 +3,7 @@
 // 用途：在没有 ffprobe 的环境里做可自动化的验收（例如"连播 60s 无花屏"）。
 // 退出码：0 正常；1 参数错误；2 运行失败或解码出错。
 
-#include "codec/ffmpeg_headers.hpp"
+#include "common/ffmpeg_headers.hpp"
 
 #include <cstddef>
 #include <cstdint>

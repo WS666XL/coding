@@ -9,11 +9,13 @@
 namespace lowlat {
 
 struct CaptureOptions {
-    std::string source{"synthetic"};  // synthetic | v4l2
+    std::string source{"synthetic"};  // synthetic | v4l2 | file
     std::string device{"/dev/video0"};
+    std::string input;   // source=file 时的媒体文件路径
+    bool loop{false};    // source=file 时循环播放
     int width{1280};
     int height{720};
-    int fps{30};
+    int fps{30};  // 0 表示沿用文件帧率（仅 source=file）
     bool realtime{true};
     std::uint32_t buffer_count{4};
 };
