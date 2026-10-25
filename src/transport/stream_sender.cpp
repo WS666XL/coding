@@ -1,6 +1,7 @@
 #include "transport/stream_sender.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <poll.h>
@@ -106,6 +107,19 @@ bool StreamSender::open(const Config& config, std::string* error)
     fec_config.max_parity_bytes =
         config.max_payload - RtpLiteHeader::kBaseSize - RtpLiteHeader::kExtensionSize;
     fec_encoder_ = XorFecEncoder(fec_config);
+
+    // 未指定 SSRC 时生成一个唯一值，让接收端能识别出"新流"
+    if (config_.ssrc == 0) {
+        static std::atomic<std::uint32_t> ssrc_counter{0};
+        const auto now = static_cast<std::uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::uint32_t candidate = static_cast<std::uint32_t>(now) ^
+                                  (ssrc_counter.fetch_add(1) * 2654435761u);
+        if (candidate == 0) {
+            candidate = 1;
+        }
+        config_.ssrc = candidate;
+    }
 
     cache_ = RetransmitCache(config.retransmit_capacity);
 

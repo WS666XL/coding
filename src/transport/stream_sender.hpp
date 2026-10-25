@@ -41,7 +41,12 @@ class StreamSender {
 public:
     struct Config {
         UdpEndpoint destination;
-        std::uint32_t ssrc{0x4C4C5601u};  // "LLV" + 版本
+        // 0 表示自动生成。
+        //
+        // 不能固定：界面里"换文件/重新开始"会新建一个发送端，序列号从 0 重来，
+        // 而接收端还记着旧序列号，会把所有包判成"倒退的重传包"，画面直接冻住。
+        // 每次给不同 SSRC，接收端才能识别出"这是一个新流"并重置状态。
+        std::uint32_t ssrc{0};
         std::size_t max_payload{1200};    // 含 16 字节头，留足 MTU 余量
         std::size_t send_buffer_bytes{4u * 1024u * 1024u};
         bool enable_fec{false};           // 打开后每组额外发 1 个修复包

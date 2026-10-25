@@ -82,9 +82,18 @@ struct StreamReceiver::Impl {
     // 拥塞控制反馈
     std::vector<DelaySample> delay_samples;
     std::uint64_t feedback_sent{0};
+    std::uint64_t stream_restarts{0};
     std::uint64_t loss_window_packets{0};
     std::uint64_t loss_window_breaks{0};
     std::int64_t last_feedback_us{0};
+
+    // 流的身份。发送端换文件/重启时会新建 StreamSender 并换一个新 SSRC，
+    // 序列号也从 0 重新开始。不识别这件事的话，接收端会把新流的包全当成
+    // "序列号倒退的重传包"，帧永远不推进（画面冻住）。
+    std::uint32_t last_ssrc{0};
+    bool have_ssrc{false};
+
+    void reset_stream_state();
 
     std::uint32_t last_frame_index{0};
     bool have_frame{false};
@@ -182,6 +191,25 @@ void StreamReceiver::Impl::flush_ready_frames(bool force)
     }
 }
 
+void StreamReceiver::Impl::reset_stream_state()
+{
+    // 只重置"与这条流相关"的状态，累计统计（包数、丢包数）保持不动：
+    // 统计是给用户看的总账，不该因为换了个文件就清零。
+    have_sequence = false;
+    last_sequence = 0;
+    have_frame = false;
+    last_frame_index = 0;
+    frame_bufs.clear();
+    delay_samples.clear();
+
+    // 这些对象内部持有半成品状态（分片缓冲、FEC 组、待发 NACK），
+    // 直接换成新实例最省事，也避免漏掉某个字段。
+    depacketizer = FuADepacketizer{};
+    fec_decoder = XorFecDecoder{128};
+    nack_scheduler = NackScheduler(options.nack_delay_ms, NackRequest::kMaxSequences);
+    nack_sent_at_us.clear();
+}
+
 void StreamReceiver::Impl::handle_data_wire(ByteSpan wire, bool recovered)
 {
     RtpLiteHeader header;
@@ -189,6 +217,16 @@ void StreamReceiver::Impl::handle_data_wire(ByteSpan wire, bool recovered)
         ++malformed;
         return;
     }
+
+    // 换流检测：SSRC 变了说明对面重新开始了，把残留状态清掉
+    if (have_ssrc && header.ssrc != last_ssrc) {
+        LOWLAT_LOG_INFO("检测到新流（SSRC {:08x} -> {:08x}），重置接收状态",
+                        last_ssrc, header.ssrc);
+        reset_stream_state();
+        ++stream_restarts;
+    }
+    last_ssrc = header.ssrc;
+    have_ssrc = true;
 
     const std::int16_t sequence_delta =
         have_sequence ? static_cast<std::int16_t>(header.sequence - last_sequence) : 1;

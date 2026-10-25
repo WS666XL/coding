@@ -188,3 +188,50 @@ TEST(StreamReceiver, RecordsLatencyWhenCaptureTimestampPresent)
     ASSERT_EQ(stats.latency_samples, 1u);
     EXPECT_LT(stats.latency_p50_ms, 1000.0);
 }
+
+// 界面里"换文件 / 重新开始"会销毁旧发送端、新建一个。
+// 新发送端的序列号从 0 重新开始，如果接收端不做换流检测，
+// 会把所有包判定为"序列号倒退的重传包"，画面永远不再推进。
+TEST(StreamReceiver, AcceptsFramesFromANewSenderOnSamePort)
+{
+    std::string error;
+
+    lowlat::StreamReceiver receiver;
+    lowlat::StreamReceiver::Options options;
+    options.bind_address = "127.0.0.1";
+    options.bind_port = 0;
+    options.frame_hold_ms = 0;
+    ASSERT_TRUE(receiver.open(options, &error)) << error;
+
+    const auto nal = make_nal(0x41, 400, 1);
+    const std::vector<lowlat::ByteSpan> nals{lowlat::ByteSpan(nal.data(), nal.size())};
+
+    auto run_sender = [&](std::uint32_t ssrc, std::uint32_t first_frame) {
+        lowlat::StreamSender::Config config;
+        config.destination.address = "127.0.0.1";
+        config.destination.port = receiver.local_port();
+        config.ssrc = ssrc;
+
+        lowlat::StreamSender sender;
+        if (!sender.open(config, &error)) {
+            return false;
+        }
+        for (std::uint32_t i = 0; i < 3; ++i) {
+            if (!sender.send_frame(nals, first_frame + i, (first_frame + i) * 3000, 1000, &error)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // 第一条流
+    ASSERT_TRUE(run_sender(0x11111111u, 0));
+    const auto first = collect(&receiver, 3);
+    ASSERT_EQ(first.size(), 3u) << "第一条流没有收到帧";
+
+    // 换一个新发送端（模拟界面里换文件），SSRC 不同、序列号从 0 开始
+    ASSERT_TRUE(run_sender(0x22222222u, 100));
+    const auto second = collect(&receiver, 3);
+    ASSERT_EQ(second.size(), 3u) << "换流后帧不再推进——换流检测失效";
+    EXPECT_EQ(second.front().frame_index, 100u);
+}
