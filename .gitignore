@@ -1,0 +1,13 @@
+build/
+build-*/
+out/
+logs/
+.cache/
+*.log
+*.h264
+*.yuv
+compile_commands.json
+
+# 压测产生的 CSV 不入库，但 docs/ 下的原始数据要保留
+*.csv
+!docs/*.csv
