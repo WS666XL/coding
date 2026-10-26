@@ -178,6 +178,13 @@ int run_live_mode(const AppOptions& options)
     toolbar->setMovable(false);
 
     auto* open_action = toolbar->addAction(QStringLiteral("Open file..."));
+    auto* camera_action = toolbar->addAction(QStringLiteral("Camera"));
+    camera_action->setToolTip(
+        QStringLiteral("Capture from the camera instead of a file"));
+    if (external_mode) {
+        // 只接收远端时没有本地发送端，无法在此进程内采集
+        camera_action->setEnabled(false);
+    }
     auto* pause_action = toolbar->addAction(QStringLiteral("Pause"));
     auto* restart_action = toolbar->addAction(QStringLiteral("Restart"));
     pause_action->setEnabled(false);
@@ -417,6 +424,18 @@ int run_live_mode(const AppOptions& options)
     });
 
     // 拖拽文件进来直接播放
+    QObject::connect(camera_action, &QAction::triggered, video, [&]() {
+        // 命令行没给 --camera 时用默认设备；给了就沿用原来的参数
+        const std::string device =
+            options.camera.empty() ? std::string("/dev/video0") : options.camera;
+        if (!start_local("v4l2", device)) {
+            info_label->setText(
+                QStringLiteral("Camera open failed — is %1 free?")
+                    .arg(QString::fromStdString(device)));
+            info_label->setStyleSheet(QStringLiteral("color:#e53935; padding-right:8px;"));
+        }
+    });
+
     // 拖入文件时切回文件源（摄像头模式下拖入文件是有意义的切换）
     video->set_file_drop_handler([&](const std::string& path) { start_local("file", path); });
 
