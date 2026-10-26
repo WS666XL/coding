@@ -284,6 +284,10 @@ int run_live_mode(const AppOptions& options)
     // ---------------------------------------------------------------- 发送端
     std::unique_ptr<LocalSender> local_sender;
     std::string current_file;
+    // 当前源的类型（"file" / "v4l2"）。Restart 必须按原类型重开：
+    // 摄像头模式下 current_file 是 /dev/video0，若按文件重开会把
+    // 字符设备当媒体文件解析，直接卡死。
+    std::string current_source{"file"};
 
     // source 为 "file" 时 path 是媒体文件；为 "v4l2" 时 path 是设备节点。
     auto start_local = [&](const std::string& source, const std::string& path) -> bool {
@@ -321,6 +325,7 @@ int run_live_mode(const AppOptions& options)
         }
 
         local_sender = std::move(candidate);
+        current_source = source;
         local_sender->set_simulated_loss_permille(current_loss_permille);
         current_file = path;
         pause_action->setEnabled(true);
@@ -399,7 +404,8 @@ int run_live_mode(const AppOptions& options)
         if (current_file.empty()) {
             return;
         }
-        start_file(current_file);
+        // 按当前源类型重开：摄像头就重开摄像头，文件就重开文件
+        start_local(current_source, current_file);
     });
 
     QObject::connect(loss_combo, &QComboBox::currentIndexChanged, video, [&](int index) {
@@ -411,7 +417,8 @@ int run_live_mode(const AppOptions& options)
     });
 
     // 拖拽文件进来直接播放
-    video->set_file_drop_handler([&](const std::string& path) { start_file(path); });
+    // 拖入文件时切回文件源（摄像头模式下拖入文件是有意义的切换）
+    video->set_file_drop_handler([&](const std::string& path) { start_local("file", path); });
 
     window.show();
 
