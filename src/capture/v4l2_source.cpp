@@ -354,6 +354,24 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
 
     while (true) {
         if (xioctl(device_handle_->fd, VIDIOC_DQBUF, &buffer) == 0) {
+            // V4L2 规定：flags 带 V4L2_BUF_FLAG_ERROR 的缓冲区内容是损坏的，
+            // 应当直接还给驱动、不要使用。之前没判这个标志，
+            // 把半帧数据喂给解码器，解码器报错后进入异常状态，
+            // 后续帧连锁失败（实测连续 32 帧全报 No JPEG data）。
+            if ((buffer.flags & V4L2_BUF_FLAG_ERROR) != 0) {
+                ++error_buffers_;
+                LOWLAT_LOG_EVERY_MS(1000, warn, "丢弃驱动标记为错误的一帧（累计 {}）",
+                                    error_buffers_);
+                v4l2_buffer bad{};
+                bad.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                bad.memory = V4L2_MEMORY_MMAP;
+                bad.index = buffer.index;
+                (void)xioctl(device_handle_->fd, VIDIOC_QBUF, &bad);
+                buffer = v4l2_buffer{};
+                buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                buffer.memory = V4L2_MEMORY_MMAP;
+                continue;
+            }
             break;
         }
         if (errno != EAGAIN) {
@@ -448,8 +466,22 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
                 }
                 return false;
             }
-            LOWLAT_LOG_EVERY_MS(1000, warn, "跳过损坏帧（连续第 {} 帧）: {}",
-                                consecutive_conversion_failures_, convert_error);
+            // 诊断信息是定位这类问题的关键：bytesused 是否为 0、
+            // 首字节是不是 JPEG 的 FF D8、驱动有没有置错误标志。
+            // 没有这些只能靠猜（之前就猜错过两次）。
+            if (buffer.bytesused >= 4) {
+                LOWLAT_LOG_EVERY_MS(1000, warn,
+                                    "跳过损坏帧（连续第 {} 帧）bytesused={} flags=0x{:x} "
+                                    "首字节={:02x}{:02x}{:02x}{:02x}: {}",
+                                    consecutive_conversion_failures_, buffer.bytesused,
+                                    buffer.flags, raw[0], raw[1], raw[2], raw[3],
+                                    convert_error);
+            } else {
+                LOWLAT_LOG_EVERY_MS(1000, warn,
+                                    "跳过损坏帧（连续第 {} 帧）bytesused={} flags=0x{:x}: {}",
+                                    consecutive_conversion_failures_, buffer.bytesused,
+                                    buffer.flags, convert_error);
+            }
             // 必须先归还池缓冲再递归。
             // C++ 里 return f() 会先求值 f() 再析构局部变量，
             // 所以直接 return next_frame() 时 converted 还活着——

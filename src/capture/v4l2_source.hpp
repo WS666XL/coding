@@ -77,6 +77,8 @@ private:
     // 连续转换失败计数。UVC 偶尔交付损坏帧，丢一帧继续即可，
     // 但不能无限重试——超过上限说明格式根本不对。
     int consecutive_conversion_failures_{0};
+    // 驱动标记为 V4L2_BUF_FLAG_ERROR 的帧数（内容损坏，直接丢弃）
+    std::uint64_t error_buffers_{0};
     bool streaming_{false};
 };
 
