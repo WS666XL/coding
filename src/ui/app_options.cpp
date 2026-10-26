@@ -51,6 +51,21 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
             if (!next_string(&options->bind)) return false;
         } else if (key == "--local") {
             if (!next_string(&options->local)) return false;
+        } else if (key == "--camera") {
+            // --camera 可以不带值（默认 /dev/video0），也可显式给设备节点
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                if (!next_string(&options->camera)) return false;
+            } else {
+                options->camera = "/dev/video0";
+            }
+        } else if (key == "--v4l2-format") {
+            if (!next_string(&options->v4l2_format)) return false;
+        } else if (key == "--width") {
+            if (!next_int(&options->capture_width)) return false;
+        } else if (key == "--height") {
+            if (!next_int(&options->capture_height)) return false;
+        } else if (key == "--fps") {
+            if (!next_int(&options->capture_fps)) return false;
         } else if (key == "--frame") {
             if (!next_int(&options->frame)) return false;
         } else if (key == "--dump") {
@@ -99,7 +114,7 @@ bool parse_ui_options(int argc, char** argv, AppOptions* options, std::string* e
     // 不给参数时打开空窗口，由界面里的"打开文件"按钮或拖拽决定播什么。
     // 这是默认入口：用户不该被命令行参数拦住。
     const int modes = (!options->input.empty() ? 1 : 0) + (!options->bind.empty() ? 1 : 0) +
-                      (!options->local.empty() ? 1 : 0);
+                      (!options->local.empty() ? 1 : 0) + (!options->camera.empty() ? 1 : 0);
     if (modes > 1) {
         *error = "--local / --input / --bind 三者只能选一个";
         return false;

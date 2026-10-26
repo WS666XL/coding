@@ -26,6 +26,12 @@ class LocalSender {
 public:
     struct Options {
         std::string input;                        // 媒体文件路径
+        std::string source{"file"};               // file / v4l2
+        std::string device{"/dev/video0"};        // source=v4l2 时的设备节点
+        std::string v4l2_format;                  // auto / yuv420 / mjpg / yuyv
+        int width{0};                             // 0 表示沿用源自身尺寸
+        int height{0};
+        int fps{0};
         std::string destination_address{"127.0.0.1"};
         std::uint16_t destination_port{0};        // 0 表示未设置，start 会报错
         int bitrate_kbps{2000};

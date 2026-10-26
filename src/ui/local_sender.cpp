@@ -51,11 +51,19 @@ bool LocalSender::start(const Options& options, std::string* error)
 
     // 1) 采集源（文件）：分辨率与帧率都由文件决定
     CaptureOptions capture_options;
-    capture_options.source = "file";
+    capture_options.source = options.source;
     capture_options.input = options.input;
+    capture_options.device = options.device;
     capture_options.loop = options.loop;
     capture_options.realtime = true;
-    capture_options.fps = 0;  // 沿用文件帧率
+    if (options.source == "file") {
+        capture_options.fps = 0;  // 沿用文件帧率
+    } else {
+        // 摄像头没有"自身尺寸"，用调用方给的或默认值
+        capture_options.width = options.width > 0 ? options.width : 640;
+        capture_options.height = options.height > 0 ? options.height : 480;
+        capture_options.fps = options.fps > 0 ? options.fps : 30;
+    }
 
     std::string create_error;
     source_ = create_capture_source(capture_options, &create_error);
@@ -73,6 +81,12 @@ bool LocalSender::start(const Options& options, std::string* error)
         }
         return false;
     }
+    // 摄像头格式偏好必须在 start() 之前设置：协商发生在 start 内部
+    if (options.source == "v4l2" && !options.v4l2_format.empty() &&
+        options.v4l2_format != "auto") {
+        source_->set_preferred_format(options.v4l2_format);
+    }
+
     if (!source_->start(error)) {
         source_.reset();
         return false;

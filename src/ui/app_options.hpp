@@ -10,6 +10,11 @@ struct AppOptions {
     std::string input;   // 离线模式：Annex-B 文件
     std::string bind;    // 实时模式：监听地址
     std::string local;   // 单进程模式：要播放的媒体文件（内部起发送端）
+    std::string camera;  // 单进程模式：直接采摄像头（如 /dev/video0）
+    std::string v4l2_format;      // auto / yuv420 / mjpg / yuyv
+    int capture_width{640};
+    int capture_height{480};
+    int capture_fps{30};
     int frame{0};
     std::string dump;    // 离线：截帧路径；实时：截图前缀
     int wait_ms{800};

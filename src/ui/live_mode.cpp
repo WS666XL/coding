@@ -285,14 +285,24 @@ int run_live_mode(const AppOptions& options)
     std::unique_ptr<LocalSender> local_sender;
     std::string current_file;
 
-    auto start_file = [&](const std::string& path) -> bool {
+    // source 为 "file" 时 path 是媒体文件；为 "v4l2" 时 path 是设备节点。
+    auto start_local = [&](const std::string& source, const std::string& path) -> bool {
         if (local_sender) {
             local_sender->stop();
             local_sender.reset();
         }
 
         LocalSender::Options sender_options;
+        sender_options.source = source;
         sender_options.input = path;
+        if (source == "v4l2") {
+            sender_options.device = path;
+            sender_options.v4l2_format = options.v4l2_format;
+            sender_options.width = options.capture_width;
+            sender_options.height = options.capture_height;
+            sender_options.fps = options.capture_fps;
+            sender_options.loop = false;  // 摄像头没有"循环"的概念
+        }
         sender_options.destination_address = "127.0.0.1";
         sender_options.destination_port = worker.local_port();
         sender_options.bitrate_kbps = options.bitrate_kbps;
@@ -317,7 +327,9 @@ int run_live_mode(const AppOptions& options)
         pause_action->setText(QStringLiteral("Pause"));
         restart_action->setEnabled(true);
 
-        const QString name = QString::fromStdString(short_source_label(path));
+        const QString name =
+            source == "v4l2" ? QStringLiteral("camera %1").arg(QString::fromStdString(path))
+                             : QString::fromStdString(short_source_label(path));
         info_label->setText(QStringLiteral("%1  ·  %2x%3  ·  %4 kbps")
                                 .arg(name)
                                 .arg(local_sender->frame_width())
@@ -328,6 +340,10 @@ int run_live_mode(const AppOptions& options)
                           << "尺寸=" << local_sender->frame_width() << "x"
                           << local_sender->frame_height();
         return true;
+    };
+
+    auto start_file = [&](const std::string& path) {
+        return start_local("file", path);
     };
 
     // 记住上次打开的位置：WSL 下大家常用 /mnt/c/... 里的 Windows 文件，
@@ -552,7 +568,9 @@ int run_live_mode(const AppOptions& options)
     stats_timer->start();
 
     // 命令行指定了文件就直接播
-    if (!options.local.empty()) {
+    if (!options.camera.empty()) {
+        start_local("v4l2", options.camera);
+    } else if (!options.local.empty()) {
         start_file(options.local);
     }
 
