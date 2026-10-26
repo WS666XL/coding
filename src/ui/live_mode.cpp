@@ -503,7 +503,11 @@ int run_live_mode(const AppOptions& options)
             metrics.target_bitrate_kbps = local_sender->current_bitrate_kbps();
             metrics.frames_sent = local_sender->frames_sent();
         } else if (external_mode) {
-            metrics.source_label = "udp";
+            // 只接收远端时没有本地发送端，分辨率只能从解码后的纹理尺寸取。
+            // 不填的话面板显示 "--"，看起来像没在收流。
+            metrics.source_label = "udp (remote)";
+            metrics.video_width = video->texture_width();
+            metrics.video_height = video->texture_height();
         }
 
         panel->update_metrics(metrics);
