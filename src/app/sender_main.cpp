@@ -44,6 +44,7 @@ struct Options {
     std::string source{"synthetic"};
     std::string device{"/dev/video0"};
     std::string input;       // source=file 时的媒体文件
+    std::string v4l2_format; // auto / yuv420 / mjpg / yuyv
     bool loop{false};        // 文件源循环播放
     bool fps_explicit{false};
     int width{1280};
@@ -73,6 +74,7 @@ void print_usage()
                  "  --source <synthetic|v4l2|file>  采集源，默认 synthetic\n"
                  "  --device <path>            V4L2 设备节点，默认 /dev/video0\n"
                  "  --input <path>             文件源要播放的媒体文件（mp4/mkv/avi...）\n"
+                 "  --v4l2-format <name>       V4L2 优先像素格式：auto/yuv420/mjpg/yuyv\n"
                  "  --loop                     文件源播完循环\n"
                  "  --width <int>              宽度，默认 1280\n"
                  "  --height <int>             高度，默认 720\n"
@@ -142,6 +144,8 @@ bool parse_args(int argc, char** argv, Options* opt, std::string* error)
             if (!take_value("--device", &opt->device)) return false;
         } else if (key == "--input") {
             if (!take_value("--input", &opt->input)) return false;
+        } else if (key == "--v4l2-format") {
+            if (!take_value("--v4l2-format", &opt->v4l2_format)) return false;
         } else if (key == "--loop") {
             opt->loop = true;
         } else if (key == "--width") {
@@ -303,7 +307,11 @@ int main(int argc, char** argv)
         LOWLAT_LOG_INFO("文件={} 循环={}", opt.input, opt.loop ? "on" : "off");
     }
     if (opt.source == "v4l2") {
-        LOWLAT_LOG_INFO("V4L2 设备={}", opt.device);
+        LOWLAT_LOG_INFO("V4L2 设备={} 优先格式={}",
+                        opt.device, opt.v4l2_format.empty() ? "auto" : opt.v4l2_format);
+        if (!opt.v4l2_format.empty() && opt.v4l2_format != "auto") {
+            source->set_preferred_format(opt.v4l2_format);
+        }
     }
     if (opt.noise_level > 0) {
         source->set_noise_level(opt.noise_level);

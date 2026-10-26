@@ -45,6 +45,12 @@ public:
     const char* name() const noexcept override { return "v4l2"; }
 
     const std::string& device() const noexcept { return device_; }
+
+    // 指定优先协商的像素格式（"yuv420" / "yuyv" / "mjpg"），空表示自动。
+    // 自动顺序为 YUV420 > MJPEG > YUYV：MJPEG 排在 YUYV 前面是因为
+    // 同样 1280x720 下 YUYV 往往只有 10fps（未压缩 4:2:2 带宽太高），
+    // 而 MJPEG 能跑满 30fps——实测的笔记本内置摄像头就是这样。
+    void set_preferred_format(const std::string& name) override;
     // 实际协商到的格式名（YUV420 / YUYV / MJPG）
     const char* pixel_format_name() const noexcept { return converter_.format_name(); }
     std::uint32_t buffer_count() const noexcept { return buffer_count_; }
@@ -60,6 +66,7 @@ private:
     int requested_width_;
     int requested_height_;
     int fps_;
+    std::string preferred_format_;
     std::uint32_t buffer_count_;
     int actual_width_{0};
     int actual_height_{0};

@@ -79,6 +79,20 @@ build/tools/h264_probe             码流校验
 
 相关环境变量：`CAMERA_NAME` `SIZE` `FPS` `BITRATE` `PORT`。
 
+##### 3.2b V4L2 摄像头（原生 Linux）
+
+```bash
+./build/src/app/lowlat_sender --source v4l2 --device /dev/video0 \
+    --width 1280 --height 720 --fps 30 --frames 150 --output out/cam.h264
+./build/tools/h264_probe out/cam.h264      # errors 必须为 0
+```
+
+格式协商顺序：**YUV420（可零拷贝） → MJPEG → YUYV**。
+MJPEG 排在 YUYV 前面是因为同样 1280x720 下 YUYV 往往只有 10fps。
+可用 `--v4l2-format mjpg|yuyv|yuv420` 强制指定。
+
+`VIDIOC_S_PARM` 会请求目标帧率，并以驱动返回的实际值为准。
+
 ### 3.3 双进程（跨机或本机调试）
 
 ```bash

@@ -179,7 +179,7 @@ if (fec_encoder_.flush(&tail_repair, &tail_produced, error) && tail_produced) {
 | 换用 Reed-Solomon FEC | `protocol/fec_xor.*` 换实现，接口不变 | 中 |
 | 加音频 | 需要新的帧类型、双路时间戳对齐、混流策略 | 高 |
 | 支持跨平台 | 换 socket 层与采集层（见 README 已知限制） | 中高 |
-| 让 V4L2 真正可用 | 补 `VIDIOC_S_PARM` 帧率协商 + 格式优先级 | 低（但需要硬件验证） |
+| 让 V4L2 真正可用 | 已补 `VIDIOC_S_PARM` 帧率协商与格式优先级（YUV420>MJPEG>YUYV），只差实机验证 | 已完成，待验证 |
 
 ## 6. 读代码时最容易被绊住的三个点
 

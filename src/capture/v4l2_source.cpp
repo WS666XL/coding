@@ -1,6 +1,7 @@
 #include "capture/v4l2_source.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -138,16 +139,29 @@ bool V4l2Source::start(std::string* error)
     // 实测（一台常见的笔记本内置摄像头，Bison 5986:118a）只提供 MJPG 与 YUYV，
     // 没有 YUV420。原先只请求 YUV420，导致 VIDIOC_S_FMT 直接失败——
     // 代码写完了却接不上任何真实摄像头。
-    static const std::uint32_t kCandidates[] = {
-        V4L2_PIX_FMT_YUV420,  // 最优先：可与 mmap 缓冲零拷贝
-        V4L2_PIX_FMT_YUYV,    // 未压缩 4:2:2，UVC 最常见的格式
-        V4L2_PIX_FMT_MJPEG,   // 压缩，带宽占用最小（USB/IP 下几乎是唯一可行选项）
+    // 自动顺序：YUV420（可零拷贝） > MJPEG（高分辨率能跑满帧率） > YUYV。
+    // MJPEG 排在 YUYV 之前是有实测依据的：1280x720 下 YUYV 常常只有 10fps。
+    std::vector<std::uint32_t> candidates = {
+        V4L2_PIX_FMT_YUV420,
+        V4L2_PIX_FMT_MJPEG,
+        V4L2_PIX_FMT_YUYV,
     };
+    // 显式指定时把它提到最前，其余仍作为回退
+    if (preferred_format_ == "yuv420") {
+        std::stable_partition(candidates.begin(), candidates.end(),
+                              [](std::uint32_t f) { return f == V4L2_PIX_FMT_YUV420; });
+    } else if (preferred_format_ == "mjpg") {
+        std::stable_partition(candidates.begin(), candidates.end(),
+                              [](std::uint32_t f) { return f == V4L2_PIX_FMT_MJPEG; });
+    } else if (preferred_format_ == "yuyv") {
+        std::stable_partition(candidates.begin(), candidates.end(),
+                              [](std::uint32_t f) { return f == V4L2_PIX_FMT_YUYV; });
+    }
 
     v4l2_format format{};
     bool negotiated = false;
     std::uint32_t chosen_format = 0;
-    for (std::uint32_t candidate : kCandidates) {
+    for (std::uint32_t candidate : candidates) {
         format = v4l2_format{};
         format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         format.fmt.pix.width = static_cast<std::uint32_t>(requested_width_);
@@ -166,7 +180,7 @@ bool V4l2Source::start(std::string* error)
     }
     if (!negotiated) {
         if (error != nullptr) {
-            *error = "设备不支持任何可用像素格式（已尝试 YUV420 / YUYV / MJPG）";
+            *error = "设备不支持任何可用像素格式（已尝试 YUV420 / MJPG / YUYV）";
         }
         return false;
     }
@@ -174,6 +188,27 @@ bool V4l2Source::start(std::string* error)
     const int actual_width = static_cast<int>(format.fmt.pix.width);
     const int actual_height = static_cast<int>(format.fmt.pix.height);
     const std::size_t stride = format.fmt.pix.bytesperline;
+
+    // 协商帧率。不调 VIDIOC_S_PARM 的话驱动会用默认间隔——
+    // 例如 1280x720 的 YUYV 默认只给 10fps，而编码器按 30fps 配置，
+    // 表现出来就是"只有 10fps"，很容易被误判成代码有问题。
+    {
+        v4l2_streamparm parm{};
+        parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        parm.parm.capture.timeperframe.numerator = 1;
+        parm.parm.capture.timeperframe.denominator =
+            static_cast<std::uint32_t>(fps_ > 0 ? fps_ : 30);
+        if (xioctl(device->fd, VIDIOC_S_PARM, &parm) == 0) {
+            const auto& tf = parm.parm.capture.timeperframe;
+            if (tf.numerator > 0 && tf.denominator > 0) {
+                const int actual = static_cast<int>(tf.denominator / tf.numerator);
+                if (actual > 0 && actual != fps_) {
+                    // 以驱动给出的为准，编码器参数要跟着它走
+                    fps_ = actual;
+                }
+            }
+        }
+    }
 
     if (!converter_.configure(chosen_format, actual_width, actual_height, stride, error)) {
         return false;
@@ -418,6 +453,15 @@ int V4l2Source::height() const noexcept
 std::uint64_t V4l2Source::requeue_failures() const noexcept
 {
     return device_handle_ ? device_handle_->requeue_failures.load(std::memory_order_relaxed) : 0;
+}
+
+void V4l2Source::set_preferred_format(const std::string& name)
+{
+    if (name == "yuv420" || name == "mjpg" || name == "yuyv") {
+        preferred_format_ = name;
+    } else {
+        preferred_format_.clear();
+    }
 }
 
 }  // namespace lowlat

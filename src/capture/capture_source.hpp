@@ -44,6 +44,9 @@ public:
     // 续攒数据，如果不读，恢复时会从几秒前的积压继续播，画面永远落后。
     // 文件源则相反——暂停就该停住，不能偷偷前进。
     virtual bool is_live() const noexcept { return false; }
+
+    // 仅 V4L2 源使用：指定优先协商的像素格式，其他源忽略
+    virtual void set_preferred_format(const std::string& /*name*/) {}
 };
 
 }  // namespace lowlat
