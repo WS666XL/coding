@@ -12,6 +12,8 @@ void print_ui_usage()
                  "  单机播放文件: lowlat_ui --local <媒体文件>     （推荐，一个窗口跑完整链路）\n"
                  "  接收远端:     lowlat_ui --bind <addr:port> [--nack] [--adaptive]\n"
                  "  离线校验:     lowlat_ui --input <h264> [--frame N] [--dump out.png]\n"
+                 "  摄像头实时:   lowlat_ui --camera [设备] [--width 640] [--height 480]\n"
+                 "                              [--fps 30] [--v4l2-format mjpg] [--loss N]\n"
                  "  --wait-ms <int>   首帧渲染前的等待，默认 800\n"
                  "  --dump-seq <n>    连拍 n 张（配合 --dump）用于生成演示动图\n"
                  "  --dump-interval <ms>  连拍间隔，默认 100\n"
