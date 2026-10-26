@@ -52,6 +52,7 @@ struct Options {
     int fps{30};
     int bitrate_kbps{2000};
     bool congestion_control{false};
+    int simulated_loss_percent{0};  // 模拟丢包，摄像头演示用（界面模式下由 UI 控制）
     int min_bitrate_kbps{300};
     int max_bitrate_kbps{4000};
     int noise_level{0};
@@ -87,6 +88,7 @@ void print_usage()
                  "  --dest <host:port>         UDP 目标；设置后进入网络模式\n"
                  "  --max-payload <bytes>      单个 UDP 载荷上限，默认 1200\n"
                  "  --cc                       开启拥塞控制（按接收端反馈调整码率）\n"
+                 "  --loss <percent>           模拟丢包百分比，用于演示恢复机制\n"
                  "  --min-bitrate <kbps>       拥塞控制下限，默认 300\n"
                  "  --max-bitrate <kbps>       拥塞控制上限，默认 4000\n"
                  "  --noise <0-127>            合成源叠加噪声幅度（0 关闭，>0 用于码率压测）\n"
@@ -169,6 +171,8 @@ bool parse_args(int argc, char** argv, Options* opt, std::string* error)
             if (!take_value("--dest", &opt->dest)) return false;
         } else if (key == "--noise") {
             if (!take_int("--noise", &opt->noise_level)) return false;
+        } else if (key == "--loss") {
+            if (!take_int("--loss", &opt->simulated_loss_percent)) return false;
         } else if (key == "--cc") {
             opt->congestion_control = true;
         } else if (key == "--min-bitrate") {
@@ -366,6 +370,14 @@ int main(int argc, char** argv)
         LOWLAT_LOG_INFO("输出=UDP 目标={} 本地端口={} max_payload={} fec={} group={}",
                         destination.to_string(), sender->local_port(), sender_config.max_payload,
                         opt.fec ? "on" : "off", sender_config.fec_group_size);
+
+          // 模拟丢包：界面模式下由 UI 的下拉框控制；命令行模式下用它，
+          // 这样"摄像头 + 丢包演示"既不需要 root，也不需要 tc netem。
+          if (opt.simulated_loss_percent > 0) {
+              sender->set_simulated_loss_permille(
+                  std::clamp(opt.simulated_loss_percent, 0, 100) * 10);
+              LOWLAT_LOG_INFO("模拟丢包={}%", opt.simulated_loss_percent);
+          }
     } else {
         const std::filesystem::path output_path(opt.output);
         if (output_path.has_parent_path()) {

@@ -196,6 +196,9 @@ int run_live_mode(const AppOptions& options)
         QStringLiteral("Simulated packet loss on the sender (no root required)"));
     if (external_mode) {
         loss_combo->setEnabled(false);  // 只接收远端时没有本地发送端可丢
+        // 暂停在外部模式下同样有意义：没有本地发送端可停，
+        // 就冻结显示（见暂停按钮的处理）。不启用会让用户以为按钮坏了。
+        pause_action->setEnabled(true);
     }
     // 命令行预置的档位：找到匹配项就选中（找不到说明是自定义值，保持 off 显示）
     for (int i = 0; i < loss_combo->count(); ++i) {
@@ -344,13 +347,21 @@ int run_live_mode(const AppOptions& options)
 
     // 记住正常状态下的工具条文案，暂停时临时替换再还原
     QString normal_info_text;
+    // 只接收远端时没有本地发送端可暂停，改为冻结"显示"：
+    // 停止从帧槽取帧，画面停在最后一帧，收包与解码照常进行。
+    bool ui_paused = false;
 
     QObject::connect(pause_action, &QAction::triggered, video, [&]() {
-        if (!local_sender) {
-            return;
+        bool next = false;
+        if (local_sender) {
+            next = !local_sender->paused();
+            local_sender->set_paused(next);
+        } else {
+            // 外部接收模式（比如摄像头由另一个进程推过来）：没有本地发送端，
+            // 就冻结显示。画面停住但连接与解码不断，恢复时立刻是当前画面。
+            ui_paused = !ui_paused;
+            next = ui_paused;
         }
-        const bool next = !local_sender->paused();
-        local_sender->set_paused(next);
         pause_action->setText(next ? QStringLiteral("Resume") : QStringLiteral("Pause"));
         // 暂停时光靠按钮文字容易被忽略，右上角状态也一起改，
         // 免得用户以为程序卡死了
@@ -406,6 +417,10 @@ int run_live_mode(const AppOptions& options)
     auto* render_timer = new QTimer(&window);
     render_timer->setInterval(16);
     QObject::connect(render_timer, &QTimer::timeout, video, [&]() {
+        if (ui_paused) {
+            return;  // 冻结显示：不取帧，画面停在最后一帧
+        }
+
         DecodedFrame entry;
         if (!worker.slot().take(&entry)) {
             return;
