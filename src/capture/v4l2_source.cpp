@@ -1,5 +1,7 @@
 #include "capture/v4l2_source.hpp"
 
+#include "common/log.hpp"
+
 #include <atomic>
 #include <algorithm>
 #include <cerrno>
@@ -209,6 +211,12 @@ bool V4l2Source::start(std::string* error)
             }
         }
     }
+
+    // 这行日志是排障的关键：真机上格式/stride/sizeimage 经常和预期不同，
+    // 没有它只能靠猜。曾经因为缺少这一行，误判成"驱动返回的格式不对"。
+    LOWLAT_LOG_INFO("V4L2 协商结果: 格式={} {}x{} stride={} sizeimage={} 帧率={}",
+                    converter_.format_name(), actual_width, actual_height, stride,
+                    format.fmt.pix.sizeimage, fps_);
 
     if (!converter_.configure(chosen_format, actual_width, actual_height, stride, error)) {
         return false;

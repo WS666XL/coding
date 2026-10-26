@@ -297,6 +297,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // 必须在 start() 之前设置：格式协商发生在 start() 里，
+    // 之后再设就成了马后炮（实测两个用例都因此退化成 MJPG）。
+    if (opt.source == "v4l2" && !opt.v4l2_format.empty() && opt.v4l2_format != "auto") {
+        source->set_preferred_format(opt.v4l2_format);
+    }
+
     if (!source->start(&error)) {
         LOWLAT_LOG_ERROR("采集源启动失败: {}", error);
         return 2;
@@ -309,9 +315,6 @@ int main(int argc, char** argv)
     if (opt.source == "v4l2") {
         LOWLAT_LOG_INFO("V4L2 设备={} 优先格式={}",
                         opt.device, opt.v4l2_format.empty() ? "auto" : opt.v4l2_format);
-        if (!opt.v4l2_format.empty() && opt.v4l2_format != "auto") {
-            source->set_preferred_format(opt.v4l2_format);
-        }
     }
     if (opt.noise_level > 0) {
         source->set_noise_level(opt.noise_level);
