@@ -25,8 +25,11 @@ namespace {
 // 连续转换失败到这个次数就认定格式不对，不再重试
 constexpr int kMaxConversionFailures = 32;
 
-// 连续这么多帧被驱动标记损坏就认定链路不可用，不再重试
-constexpr int kMaxConsecutiveErrorBuffers = 60;
+// 连续这么多帧被驱动标记损坏就重启采集流重新同步
+constexpr int kErrorBuffersBeforeRestart = 15;
+
+// 重启这么多次仍不恢复才放弃
+constexpr int kMaxStreamRestarts = 10;
 
 
 // ioctl 可能被信号打断，EINTR 时必须重试，否则会丢帧或误报错误。
@@ -337,6 +340,53 @@ void V4l2Source::stop() noexcept
     streaming_ = false;
 }
 
+bool V4l2Source::restart_stream(const std::shared_ptr<Device>& device, std::string* error)
+{
+    if (device == nullptr) {
+        return false;
+    }
+    if (++stream_restarts_ > kMaxStreamRestarts) {
+        if (error != nullptr) {
+            *error = "USB 传输反复失败，已重启采集流 " + std::to_string(stream_restarts_ - 1) +
+                     " 次仍无法恢复；常见原因是带宽不足或 USB 透传不稳，"
+                     "可尝试降低分辨率（如 --width 640 --height 480）";
+        }
+        return false;
+    }
+
+    v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    {
+        std::lock_guard<std::mutex> lock(device->mutex);
+        (void)xioctl(device->fd, VIDIOC_STREAMOFF, &type);
+
+        // STREAMOFF 会把所有缓冲退回"未入队"状态，必须重新入队才能再出帧。
+        // 恰有缓冲被上层持有时 QBUF 会失败，忽略即可——那个缓冲稍后会被
+        // 它自己的 deleter 还回来。
+        for (std::uint32_t i = 0; i < device->buffers.size(); ++i) {
+            if (device->buffers[i] == nullptr) {
+                continue;
+            }
+            v4l2_buffer buffer{};
+            buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buffer.memory = V4L2_MEMORY_MMAP;
+            buffer.index = i;
+            (void)xioctl(device->fd, VIDIOC_QBUF, &buffer);
+        }
+        if (xioctl(device->fd, VIDIOC_STREAMON, &type) != 0) {
+            if (error != nullptr) {
+                *error = with_errno("重启采集流失败（VIDIOC_STREAMON）");
+            }
+            return false;
+        }
+    }
+
+    consecutive_error_buffers_ = 0;
+    LOWLAT_LOG_EVERY_MS(
+        500, warn, "USB 传输异常，已重启采集流重新同步（第 {} 次，累计丢弃 {} 帧）",
+        stream_restarts_, error_buffers_);
+    return true;
+}
+
 bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
 {
     if (!streaming_ || !device_handle_) {
@@ -369,18 +419,20 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
                                     "丢弃驱动标记为错误的一帧（累计 {}，连续 {}）",
                                     error_buffers_, consecutive_error_buffers_);
 
-                // 连续大量错误说明链路根本没在正常出帧（带宽不足、
-                // USB 透传不稳、或设备被抢）。这时 DQBUF 会立刻返回错误帧，
-                // 形成热循环——实测 2 秒攒了 2958 次，CPU 白烧。
-                // 既然重试也不会好，直接报错退出，把问题暴露出来。
-                if (consecutive_error_buffers_ >= kMaxConsecutiveErrorBuffers) {
-                    if (error != nullptr) {
-                        *error = "连续 " + std::to_string(consecutive_error_buffers_) +
-                                 " 帧被驱动标记为损坏（V4L2_BUF_FLAG_ERROR），"
-                                 "常见原因是带宽不足或 USB 透传不稳；"
-                                 "可尝试降低分辨率（如 --width 640 --height 480）";
+                // 一次 USB 传输故障（dmesg 里是 Failed to resubmit video URB）
+                // 会让整条流永久失步：之后的每一帧都带错误标志。
+                // 光靠跳过救不回来，必须 STREAMOFF/STREAMON 重新同步。
+                //
+                // 实测：640x480 单独跑 150 帧全好；但和接收端同时跑时，
+                // 第 116 帧附近出一次故障，之后连续 31 帧全坏。
+                if (consecutive_error_buffers_ >= kErrorBuffersBeforeRestart) {
+                    if (!restart_stream(device_handle_, error)) {
+                        return false;
                     }
-                    return false;
+                    buffer = v4l2_buffer{};
+                    buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                    buffer.memory = V4L2_MEMORY_MMAP;
+                    continue;
                 }
                 // 轻微退避，避免纯空转
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));

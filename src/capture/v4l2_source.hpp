@@ -61,6 +61,9 @@ public:
 private:
     struct Device;
 
+    // USB 传输故障后重启采集流，让驱动重新同步
+    bool restart_stream(const std::shared_ptr<Device>& device, std::string* error);
+
     std::shared_ptr<Device> device_handle_;
     std::string device_;
     int requested_width_;
@@ -80,6 +83,7 @@ private:
     // 驱动标记为 V4L2_BUF_FLAG_ERROR 的帧数（内容损坏，直接丢弃）
     std::uint64_t error_buffers_{0};
     int consecutive_error_buffers_{0};
+    int stream_restarts_{0};
     bool streaming_{false};
 };
 
