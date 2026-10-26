@@ -334,7 +334,7 @@ AutoGeneratesDistinctSsrcPerInstance: Failure
 
 | 不足 | 具体到什么程度 |
 |---|---|
-| **V4L2 没在实机跑通** | 8 个 ioctl 全实现，格式协商支持 YUV420/YUYV/MJPEG（真实 UVC 只给后两种），转换逻辑有 11 个单测。但实机卡在环境：WSL2 只能走 `usbipd` 透传，透传成功、`uvcvideo` 绑定 UVC 1.50，可是**数据在等时传输中被截断**——320×240 一帧应有 10~20 KB，实际 `bytesused` 只有 64~80 字节，ffmpeg 直接报 `corrupted data`。截断发生在驱动层之下，换格式救不回来，**WSL2 + USB/IP 不适合视频采集** |
+| **V4L2 只在虚拟机验证过** | 8 个 ioctl + `S_PARM` 全实现，格式协商 YUV420/YUYV/MJPEG，11 个转换单测。实机（VMware 里的 Ubuntu 24.04 + 内置 UVC）跑到 MJPG 720p30，150 帧 `errors=0`，**但帧率只有 16.8fps**（x264 编码 24ms/帧，VM CPU 限制）。裸机未测。另外 WSL2 + usbipd 这条路径实测不可用（等时传输截断） |
 | **没有音频** | 纯视频 |
 | **没有加密** | 明文 UDP |
 | **只支持单流** | SSRC 只用于换流检测，不做流复用 |

@@ -74,6 +74,9 @@ private:
     V4l2Converter converter_;
     std::shared_ptr<FramePool> pool_;
     std::uint32_t frame_index_{0};
+    // 连续转换失败计数。UVC 偶尔交付损坏帧，丢一帧继续即可，
+    // 但不能无限重试——超过上限说明格式根本不对。
+    int consecutive_conversion_failures_{0};
     bool streaming_{false};
 };
 

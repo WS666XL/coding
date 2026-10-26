@@ -21,6 +21,10 @@
 namespace lowlat {
 namespace {
 
+// 连续转换失败到这个次数就认定格式不对，不再重试
+constexpr int kMaxConversionFailures = 32;
+
+
 // ioctl 可能被信号打断，EINTR 时必须重试，否则会丢帧或误报错误。
 int xioctl(int fd, unsigned long request, void* arg)
 {
@@ -212,15 +216,16 @@ bool V4l2Source::start(std::string* error)
         }
     }
 
-    // 这行日志是排障的关键：真机上格式/stride/sizeimage 经常和预期不同，
-    // 没有它只能靠猜。曾经因为缺少这一行，误判成"驱动返回的格式不对"。
-    LOWLAT_LOG_INFO("V4L2 协商结果: 格式={} {}x{} stride={} sizeimage={} 帧率={}",
-                    converter_.format_name(), actual_width, actual_height, stride,
-                    format.fmt.pix.sizeimage, fps_);
-
     if (!converter_.configure(chosen_format, actual_width, actual_height, stride, error)) {
         return false;
     }
+
+    // 这行日志是排障的关键：真机上格式/stride/sizeimage 经常和预期不同。
+    // 必须放在 configure 之后——之前插在前面，format_name() 还没配置，
+    // 打出来是 "格式=none"，看着像协商失败，实际是日志打早了。
+    LOWLAT_LOG_INFO("V4L2 协商结果: 格式={} {}x{} stride={} sizeimage={} 帧率={}",
+                    converter_.format_name(), actual_width, actual_height, stride,
+                    format.fmt.pix.sizeimage, fps_);
     if (format.fmt.pix.sizeimage == 0) {
         if (error != nullptr) {
             *error = "驱动返回的缓冲区大小为 0";
@@ -426,11 +431,30 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
             }
             return false;
         }
-        if (!converter_.convert(raw, buffer.bytesused, converted.get(), error)) {
+        std::string convert_error;
+        if (!converter_.convert(raw, buffer.bytesused, converted.get(), &convert_error)) {
             requeue();
-            return false;
+            // 单帧损坏不应该中断整条采集。
+            //
+            // 实测（VMware + 内置 UVC 摄像头，MJPG 720p）：驱动在启动阶段
+            // 偶尔交付不完整的 JPEG，解码器报 "No JPEG data found in image"。
+            // 原实现直接 return false，跑十几帧就整体失败；而同一设备另一次
+            // 运行 150 帧全正常——说明是偶发坏帧，不是格式不支持。
+            ++consecutive_conversion_failures_;
+            if (consecutive_conversion_failures_ >= kMaxConversionFailures) {
+                if (error != nullptr) {
+                    *error = "连续 " + std::to_string(consecutive_conversion_failures_) +
+                             " 帧无法转换，疑似格式不匹配: " + convert_error;
+                }
+                return false;
+            }
+            LOWLAT_LOG_EVERY_MS(1000, warn, "跳过损坏帧（连续第 {} 帧）: {}",
+                                consecutive_conversion_failures_, convert_error);
+            // 取下一帧；递归深度被 kMaxConversionFailures 限制
+            return next_frame(out, error);
         }
         requeue();
+        consecutive_conversion_failures_ = 0;
 
         *out = YuvFrame(frame_index_, capture_ts_us, actual_width_, actual_height_,
                         std::move(converted));
