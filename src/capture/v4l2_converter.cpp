@@ -321,6 +321,10 @@ bool V4l2Converter::convert(const std::uint8_t* src, std::size_t size, std::uint
                     *error = std::string("MJPEG 送包失败: ") +
                              ffmpeg_error_text(sent, text, sizeof(text));
                 }
+                // 必须重置解码器：送包失败后它内部可能残留半帧状态，
+                // 不 flush 的话后续帧会连锁失败（实测连续 6 帧全报
+                // "No JPEG data found in image"，看起来像帧全坏了）。
+                avcodec_flush_buffers(impl_->mjpeg);
                 return false;
             }
 
@@ -331,6 +335,7 @@ bool V4l2Converter::convert(const std::uint8_t* src, std::size_t size, std::uint
                     *error = std::string("MJPEG 解码失败: ") +
                              ffmpeg_error_text(received, text, sizeof(text));
                 }
+                avcodec_flush_buffers(impl_->mjpeg);
                 return false;
             }
 

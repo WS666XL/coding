@@ -450,7 +450,12 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
             }
             LOWLAT_LOG_EVERY_MS(1000, warn, "跳过损坏帧（连续第 {} 帧）: {}",
                                 consecutive_conversion_failures_, convert_error);
-            // 取下一帧；递归深度被 kMaxConversionFailures 限制
+            // 必须先归还池缓冲再递归。
+            // C++ 里 return f() 会先求值 f() 再析构局部变量，
+            // 所以直接 return next_frame() 时 converted 还活着——
+            // 每递归一层就占住一个缓冲，6 个缓冲很快耗尽，
+            // 报错是"转换帧池耗尽"，看起来完全不像这个原因。
+            converted.reset();
             return next_frame(out, error);
         }
         requeue();
