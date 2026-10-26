@@ -9,6 +9,7 @@
 #include <cstring>
 #include <mutex>
 #include <utility>
+#include <thread>
 #include <vector>
 
 #include <fcntl.h>
@@ -23,6 +24,9 @@ namespace {
 
 // 连续转换失败到这个次数就认定格式不对，不再重试
 constexpr int kMaxConversionFailures = 32;
+
+// 连续这么多帧被驱动标记损坏就认定链路不可用，不再重试
+constexpr int kMaxConsecutiveErrorBuffers = 60;
 
 
 // ioctl 可能被信号打断，EINTR 时必须重试，否则会丢帧或误报错误。
@@ -360,8 +364,26 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
             // 后续帧连锁失败（实测连续 32 帧全报 No JPEG data）。
             if ((buffer.flags & V4L2_BUF_FLAG_ERROR) != 0) {
                 ++error_buffers_;
-                LOWLAT_LOG_EVERY_MS(1000, warn, "丢弃驱动标记为错误的一帧（累计 {}）",
-                                    error_buffers_);
+                ++consecutive_error_buffers_;
+                LOWLAT_LOG_EVERY_MS(1000, warn,
+                                    "丢弃驱动标记为错误的一帧（累计 {}，连续 {}）",
+                                    error_buffers_, consecutive_error_buffers_);
+
+                // 连续大量错误说明链路根本没在正常出帧（带宽不足、
+                // USB 透传不稳、或设备被抢）。这时 DQBUF 会立刻返回错误帧，
+                // 形成热循环——实测 2 秒攒了 2958 次，CPU 白烧。
+                // 既然重试也不会好，直接报错退出，把问题暴露出来。
+                if (consecutive_error_buffers_ >= kMaxConsecutiveErrorBuffers) {
+                    if (error != nullptr) {
+                        *error = "连续 " + std::to_string(consecutive_error_buffers_) +
+                                 " 帧被驱动标记为损坏（V4L2_BUF_FLAG_ERROR），"
+                                 "常见原因是带宽不足或 USB 透传不稳；"
+                                 "可尝试降低分辨率（如 --width 640 --height 480）";
+                    }
+                    return false;
+                }
+                // 轻微退避，避免纯空转
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 v4l2_buffer bad{};
                 bad.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
                 bad.memory = V4L2_MEMORY_MMAP;
@@ -402,6 +424,8 @@ bool V4l2Source::next_frame(YuvFrame* out, std::string* error)
             return false;
         }
     }
+
+    consecutive_error_buffers_ = 0;
 
     if (buffer.index >= device_handle_->buffers.size()) {
         if (error != nullptr) {
