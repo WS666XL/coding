@@ -334,7 +334,7 @@ AutoGeneratesDistinctSsrcPerInstance: Failure
 
 | 不足 | 具体到什么程度 |
 |---|---|
-| **V4L2 只在虚拟机验证过** | 8 个 ioctl + `S_PARM` 全实现，格式协商 YUV420/YUYV/MJPEG，11 个转换单测。实机（VMware 里的 Ubuntu 24.04 + 内置 UVC）跑到 MJPG 720p30，150 帧 `errors=0`，**但帧率只有 16.8fps**（x264 编码 24ms/帧，VM CPU 限制）。裸机未测。另外 WSL2 + usbipd 这条路径实测不可用（等时传输截断） |
+| **V4L2 只在虚拟机验证过** | 8 个 ioctl + `S_PARM` 全实现，格式协商 YUV420/YUYV/MJPEG，11 个转换单测。实机跑到 **MJPG 640×480@30 稳定 30fps、150 帧 `errors=0`**；720p 在 VM 里因 `Failed to resubmit video URB` 不稳（USB 透传带宽不足），裸机未测 |
 | **没有音频** | 纯视频 |
 | **没有加密** | 明文 UDP |
 | **只支持单流** | SSRC 只用于换流检测，不做流复用 |

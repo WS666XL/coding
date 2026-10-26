@@ -175,8 +175,9 @@ setarch "$(uname -m)" -R ./build-tsan/tests/lowlat_tests --gtest_filter='SpscRin
 
 ## 已知限制
 
-1. **V4L2 采集已实机验证，但只在虚拟机上跑过**。8 个 ioctl 全实现（`QUERYCAP`/`S_FMT`/`QUERYBUF`/`REQBUFS`/`QBUF`/`DQBUF`/`STREAMON`/`STREAMOFF` + `S_PARM`），采集走 mmap 零拷贝，格式协商支持 **YUV420 / YUVY / MJPEG**，非 YUV420 由 `V4l2Converter` 转 I420。
-   实测环境是 VMware 里的 Ubuntu 24.04 + 内置 UVC 摄像头（Bison `5986:118a`）：协商到 MJPG 1280×720@30，抓 150 帧 → `access_units=150 frames=150 errors=0`。**但持续帧率只有 16.8fps**（VM 里 x264 编码 720p 平均 24ms/帧），是 CPU 限制而非采集代码问题，裸机上未测。
+1. **V4L2 采集已实机验证**（VMware / Ubuntu 24.04 / 内置 UVC 摄像头 `5986:118a`）。8 个 ioctl + `S_PARM` 全实现，mmap 零拷贝，格式协商支持 **YUV420 / YUYV / MJPEG**，非 YUV420 由 `V4l2Converter` 转 I420。
+   **稳定配置是 MJPG 640×480@30**：150 帧 `access_units=150 frames=150 errors=0`，实测持续 30fps（编码 13ms/帧）。
+   **720p 在虚拟机里不稳定**：`dmesg` 反复报 `uvcvideo: Failed to resubmit video URB (-1)`，即 USB 等时传输提交失败（VM 的 USB 透传撑不住约 30Mbps）；偶发能跑通 150 帧，但不能依赖。裸机未测。
    另一条路径（WSL2 + usbipd 透传）实测**不可用**：数据在等时传输中被截断，`bytesused` 仅 64~80 字节，详见 [docs/05-pitfalls.md](docs/05-pitfalls.md) 第 15 条。
 2. **渲染走软件光栅化**（llvmpipe），无硬件 GPU 加速。720p 全屏清屏实测 4.76ms/帧，30fps 预算占用 14%。
 3. **色彩矩阵固定 BT.601 有限范围**，未从 SPS VUI 读取。接外部视频源时颜色会偏。

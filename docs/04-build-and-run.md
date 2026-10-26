@@ -96,12 +96,15 @@ MJPEG 排在 YUYV 前面是因为同样 1280x720 下 YUYV 往往只有 10fps。
 **实测**（VMware / Ubuntu 24.04 / 内置 UVC 摄像头 `5986:118a`）：
 
 ```
-V4L2 协商结果: 格式=MJPG 1280x720 stride=0 sizeimage=1843200 帧率=30
+V4L2 协商结果: 格式=MJPG 640x480 stride=0 sizeimage=614400 帧率=30
 file=out/cam.h264 access_units=150 frames=150 errors=0 pix_fmt=yuv420p
 ```
 
-注意这台 VM 上**持续帧率只有 16.8fps**（x264 编码 720p 平均 24ms/帧），
-是 CPU 限制而非采集问题；裸机上未测。要压满 30fps 可用 640×480。
+**推荐 640×480**：这台 VM 上稳定 30fps（编码 13ms/帧）。
+
+**720p 不稳**：`dmesg` 反复出现 `uvcvideo: Failed to resubmit video URB (-1)`，
+即 USB 等时传输提交失败——VMware 的 USB 透传撑不住 720p30 的带宽。
+偶发能跑通 150 帧，但不可依赖。真机上应无此问题（未验证）。
 
 ### 3.3 双进程（跨机或本机调试）
 
