@@ -334,7 +334,7 @@ AutoGeneratesDistinctSsrcPerInstance: Failure
 
 | 不足 | 具体到什么程度 |
 |---|---|
-| **V4L2 只在虚拟机验证过** | 8 个 ioctl + `S_PARM` 全实现，格式协商 YUV420/YUYV/MJPEG，11 个转换单测。实机跑到 **MJPG 640×480@30 稳定 30fps、150 帧 `errors=0`**；720p 在 VM 里因 `Failed to resubmit video URB` 不稳（USB 透传带宽不足），裸机未测 |
+| **V4L2 只在虚拟机验证过** | 9 个 ioctl（含 `S_PARM` 帧率协商）全实现，格式协商 YUV420/YUYV/MJPEG，11 个转换单测。实机跑到 **MJPG 640×480@30 稳定 30fps、150 帧 `errors=0`**；720p 在 VM 里因 `Failed to resubmit video URB` 不稳（USB 透传带宽不足），裸机未测 |
 | **没有音频** | 纯视频 |
 | **没有加密** | 明文 UDP |
 | **只支持单流** | SSRC 只用于换流检测，不做流复用 |

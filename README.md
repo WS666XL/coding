@@ -52,14 +52,14 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 | 模块 | 行数 | 职责 |
 |---|---|---|
 | `common` | 809 | 无锁 SPSC 环形队列、帧池、字节序、统计、日志 |
-| `capture` | 1375 | 采集抽象、合成源（彩条+帧号+噪声）、V4L2 MMAP 采集、文件源（任意媒体文件解码） |
+| `capture` | 2091 | 采集抽象、合成源（彩条+帧号+噪声）、V4L2 MMAP 采集、文件源（任意媒体文件解码） |
 | `codec` | 683 | libx264 编码、libavcodec 解码 |
 | `protocol` | 1694 | RTP-lite 头、FU-A 分片重组、XOR FEC、NACK 调度、抖动估计、RTT 估计、带宽估计、控制通道 |
 | `transport` | 1816 | UDP socket、发送器、接收流水线、重传缓存 |
-| `app` | 1057 | `lowlat_sender` / `lowlat_receiver` 命令行程序 |
-| `ui` | 2337 | Qt6 界面、GL 渲染、指标面板、收包线程、进程内发送端 |
+| `app` | 1080 | `lowlat_sender` / `lowlat_receiver` 命令行程序 |
+| `ui` | 2770 | Qt6 界面、GL 渲染、指标面板、收包线程、进程内发送端 |
 
-源码合计约 9771 行，含测试与工具约 14531 行。
+源码合计约 10943 行，含测试与工具约 15914 行。
 
 ## 文档
 
@@ -71,7 +71,7 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 | [docs/01-system-overview.md](docs/01-system-overview.md) | 系统全景：模块划分、一帧的 14 步旅程、线程模型、关键常量 |
 | [docs/02-code-walkthrough.md](docs/02-code-walkthrough.md) | 代码导读：目录树、各模块职责、推荐阅读顺序 |
 | [docs/03-key-designs.md](docs/03-key-designs.md) | 12 个关键设计：问题 → 方案 → 代价 |
-| [docs/05-pitfalls.md](docs/05-pitfalls.md) | 17 个真实 bug 的现象、根因、修法、教训 |
+| [docs/05-pitfalls.md](docs/05-pitfalls.md) | 20 个真实 bug 的现象、根因、修法、教训 |
 
 **参考用**：
 
@@ -91,7 +91,7 @@ Linux 平台的低延迟实时视频传输系统。覆盖采集 → 编码 → �
 ./scripts/setup-deps.sh          # 安装依赖（需要 sudo）
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-ctest --test-dir build           # 145 个用例
+ctest --test-dir build           # 198 个用例
 ```
 
 打包为 `.deb`（含 systemd 单元，运行时依赖由 `dpkg-shlibdeps` 自动推导）：
@@ -166,7 +166,7 @@ LEVELS="0 5" REPS=1 FRAMES=150 ./scripts/bench.sh   # 快速验证
 
 ## 测试
 
-145 个单元/集成测试，覆盖分片重组、FEC 编解码、NACK 调度、抖动估计、SDK 往返、接收流水线（真实 UDP）。并发相关代码通过 ThreadSanitizer 验证无数据竞争。
+198 个单元/集成测试，覆盖分片重组、FEC 编解码、NACK 调度、抖动估计、SDK 往返、接收流水线（真实 UDP）。并发相关代码通过 ThreadSanitizer 验证无数据竞争。
 
 ```bash
 ctest --test-dir build
@@ -175,7 +175,7 @@ setarch "$(uname -m)" -R ./build-tsan/tests/lowlat_tests --gtest_filter='SpscRin
 
 ## 已知限制
 
-1. **V4L2 采集已实机验证**（VMware / Ubuntu 24.04 / 内置 UVC 摄像头 `5986:118a`）。8 个 ioctl + `S_PARM` 全实现，mmap 零拷贝，格式协商支持 **YUV420 / YUYV / MJPEG**，非 YUV420 由 `V4l2Converter` 转 I420。
+1. **V4L2 采集已实机验证**（VMware / Ubuntu 24.04 / 内置 UVC 摄像头 `5986:118a`）。9 个 ioctl（含 `S_PARM` 帧率协商）全实现，mmap 零拷贝，格式协商支持 **YUV420 / YUYV / MJPEG**，非 YUV420 由 `V4l2Converter` 转 I420。
    **稳定配置是 MJPG 640×480@30**：150 帧 `access_units=150 frames=150 errors=0`，实测持续 30fps（编码 13ms/帧）。
    **720p 在虚拟机里不稳定**：`dmesg` 反复报 `uvcvideo: Failed to resubmit video URB (-1)`，即 USB 等时传输提交失败（VM 的 USB 透传撑不住约 30Mbps）；偶发能跑通 150 帧，但不能依赖。裸机未测。
    另一条路径（WSL2 + usbipd 透传）实测**不可用**：数据在等时传输中被截断，`bytesused` 仅 64~80 字节，详见 [docs/05-pitfalls.md](docs/05-pitfalls.md) 第 15 条。
@@ -183,8 +183,8 @@ setarch "$(uname -m)" -R ./build-tsan/tests/lowlat_tests --gtest_filter='SpscRin
 3. **色彩矩阵固定 BT.601 有限范围**，未从 SPS VUI 读取。接外部视频源时颜色会偏。
 4. **拥塞控制只验证了 loopback 限速**，没有真实跨机链路数据。收敛偏保守：1.2 Mbit 链路上稳定在 800–880 kbps（约容量的 70%）。
 5. **`x264_encoder_reconfig` 在本机 x264 164 上改码率无效**，`set_bitrate` 采用重建编码器的方式（代价是一次 SPS/PPS + IDR）。这个坑由 `tests/test_encoder.cpp` 的 `RuntimeBitrateReconfigActuallyChangesOutput` 守护。
-5. **延迟口径是"采集 → 落盘"与"采集 → 上屏"**，不含物理显示延迟，不是 glass-to-glass。
-6. 压测每档仅 2 次重复，PSNR 存在方差。
+6. **延迟口径是"采集 → 落盘"与"采集 → 上屏"**，不含物理显示延迟，不是 glass-to-glass。
+7. 压测每档仅 2 次重复，PSNR 存在方差。
 
 ## 目录
 
